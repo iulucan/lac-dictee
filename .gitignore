@@ -18,6 +18,7 @@ build/
 venv/
 env/
 .venv/
+.venv
 
 # Streamlit
 .streamlit/

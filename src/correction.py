@@ -1,11 +1,40 @@
 """
 Correction module — uses Claude AI to compare student text vs correct text
-and return a structured error report.
+and return a structured error report with explanations.
 """
 
 import os
 import json
 import anthropic
+from dataclasses import dataclass, field
+from typing import List
+
+
+@dataclass
+class DictationError:
+    wrong: str
+    correct: str
+    type: str       # spelling | grammar | accent | missing_word | extra_word
+    explanation: str
+
+
+@dataclass
+class CorrectionResult:
+    score: int                         # 0–100
+    total_words: int
+    errors: List[DictationError] = field(default_factory=list)
+
+    @property
+    def error_count(self) -> int:
+        return len(self.errors)
+
+    @property
+    def errors_by_type(self) -> dict:
+        counts: dict = {}
+        for e in self.errors:
+            counts[e.type] = counts.get(e.type, 0) + 1
+        return counts
+
 
 _client = None
 
@@ -13,70 +42,110 @@ _client = None
 def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY not set. Add it to your .env file."
+            )
+        _client = anthropic.Anthropic(api_key=api_key)
     return _client
 
 
-SYSTEM_PROMPT = """You are an expert French language teacher.
-You receive two texts:
-1. The student's text (extracted via OCR from handwriting — may contain OCR artifacts)
-2. The correct reference text
+_SYSTEM_PROMPT = """\
+You are an expert French language teacher and proofreader.
 
-Your job is to compare them word by word and identify every error.
+You receive:
+1. STUDENT TEXT — extracted via OCR from a student's handwriting (may have OCR artifacts)
+2. CORRECT TEXT — the original reference dictation
 
-Respond ONLY with valid JSON in this exact format:
+Your task: compare them word by word and identify every error the student made.
+
+Respond ONLY with valid JSON in this exact schema (no markdown, no explanation outside the JSON):
 {
   "score": <integer 0-100>,
-  "total_words": <integer>,
+  "total_words": <integer — count of words in CORRECT TEXT>,
   "errors": [
     {
-      "wrong": "<what the student wrote>",
+      "wrong": "<exact word or phrase the student wrote>",
       "correct": "<what it should be>",
       "type": "<spelling|grammar|accent|missing_word|extra_word>",
-      "explanation": "<short explanation in English>"
+      "explanation": "<one-sentence explanation in English>"
     }
   ]
 }
 
-Rules:
-- Score = 100 - (errors / total_words * 100), minimum 0
-- Ignore minor OCR artifacts that are clearly not student mistakes
-- Be strict about French accents (é vs e = accent error)
-- Do not include any text outside the JSON object"""
+Error type definitions:
+- spelling:      wrong letters (e.g. "maision" instead of "maison")
+- grammar:       wrong verb form, wrong gender/number agreement
+- accent:        correct letters but wrong or missing accent (e.g. "eleve" instead of "élève")
+- missing_word:  student skipped a word entirely
+- extra_word:    student added a word not in the original
+
+Score formula: score = max(0, round(100 - (error_count / total_words * 100)))
+
+Important:
+- Ignore minor OCR artifacts (stray characters, punctuation noise) that are clearly not student errors
+- Be strict about French accents — they are graded separately
+- Do not add any text, explanation, or markdown outside the JSON object\
+"""
 
 
-def correct_dictation(student_text: str, correct_text: str) -> dict:
+def correct_dictation(student_text: str, correct_text: str) -> CorrectionResult:
     """
-    Compare student's dictation against the correct text using Claude.
+    Compare student's dictation against the correct reference using Claude.
 
     Args:
-        student_text: OCR-extracted text from student's handwriting
-        correct_text: The original correct dictation text
+        student_text: OCR-extracted text from the student's handwriting
+        correct_text: The teacher's original correct dictation text
 
     Returns:
-        dict with keys: score (int), total_words (int), errors (list)
+        CorrectionResult with score, total_words, and list of DictationError objects.
+
+    Raises:
+        RuntimeError: if ANTHROPIC_API_KEY is not set
+        ValueError: if Claude returns malformed JSON
     """
     client = _get_client()
-
-    user_message = f"""STUDENT TEXT:
-{student_text}
-
-CORRECT TEXT:
-{correct_text}"""
 
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
+        system=_SYSTEM_PROMPT,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"STUDENT TEXT:\n{student_text}\n\n"
+                    f"CORRECT TEXT:\n{correct_text}"
+                ),
+            }
+        ],
     )
 
     raw = message.content[0].text.strip()
 
-    # Strip markdown code fences if Claude wraps the JSON
+    # Strip markdown code fences if present
     if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
+        lines = raw.split("\n")
+        raw = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
 
-    return json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Claude returned invalid JSON: {e}\nRaw response: {raw[:200]}")
+
+    errors = [
+        DictationError(
+            wrong=err.get("wrong", ""),
+            correct=err.get("correct", ""),
+            type=err.get("type", "spelling"),
+            explanation=err.get("explanation", ""),
+        )
+        for err in data.get("errors", [])
+    ]
+
+    return CorrectionResult(
+        score=int(data.get("score", 0)),
+        total_words=int(data.get("total_words", 1)),
+        errors=errors,
+    )
