@@ -1,51 +1,70 @@
-# lac-dictee
-AI-powered dictation correction system
+# LacDictée 🇫🇷
 
-LacDictee is an AI-powered platform that automates French dictation (dictée) correction using handwriting recognition and intelligent grading.
+AI-powered French dictation correction tool for teachers.
 
-Key gaps (your opportunity 🚀)
+Teachers upload a photo of a student's handwritten dictation — LacDictée reads it with OCR and uses Claude AI to compare it against the correct text, generating a detailed error report instantly.
 
-After reviewing the ecosystem, there’s a clear gap:
+## Features (MVP)
 
-❗ Missing all-in-one teacher tool
+- Upload handwritten dictation photo
+- OCR text extraction (pytesseract)
+- Claude AI correction with error highlighting
+- Error report: spelling, grammar, accents
+- Score calculation
 
-Most tools lack:
+## Tech Stack
 
-🧑‍🏫 Teacher workflow automation
-🎧 Custom dictation creation (text → audio)
-🤖 Automatic correction with explanation
-📊 Class analytics (common mistakes, scoring)
-🧩 Curriculum alignment (A1–C2, school levels)
+| Layer | Technology |
+|-------|-----------|
+| UI | Streamlit |
+| OCR | pytesseract + Pillow |
+| AI | Claude API (Anthropic) |
+| Language | Python 3.11+ |
 
+## Getting Started
 
-Suggested unique features (based on gaps)
+```bash
+# Clone
+git clone https://github.com/codibrahim/lac-dictee.git
+cd lac-dictee
 
-To stand out:
+# Install dependencies
+pip install -r requirements.txt
 
-AI-generated dictations (by level/topic)
-Auto-reading (text → natural voice)
-Smart correction:
-grammar mistakes
-spelling patterns
-Teacher dashboard:
-error heatmaps
-student progress
-Export / integration (PDF, LMS, Google Classroom)
+# Set environment variables
+cp .env.example .env
+# Add your ANTHROPIC_API_KEY to .env
 
-===========
+# Run
+streamlit run app.py
+```
 
-…or create a new repository on the command line
-echo "# lac-dictee" >> README.md
-git init
-git add README.md
-git commit -m "first commit"
-git branch -M main
-git remote add origin git@github.com:codibrahim/lac-dictee.git
-git push -u origin main
+## Project Structure
 
+```
+lac-dictee/
+├── app.py              # Streamlit main app
+├── ocr.py              # OCR processing
+├── correction.py       # Claude AI correction logic
+├── requirements.txt
+├── .env.example
+└── README.md
+```
 
-…or push an existing repository from the command line
-git remote add origin git@github.com:codibrahim/lac-dictee.git
-git branch -M main
-git push -u origin main
+## Roadmap
 
+- [x] Project setup
+- [ ] Image upload + OCR
+- [ ] AI correction engine
+- [ ] Error report UI
+- [ ] Export to PDF
+- [ ] Multi-student support
+- [ ] Teacher dashboard
+
+## Inspiration
+
+Inspired by [DiktatMeister](https://diktatmeister.de) — a German dictation app for immigrant families.
+
+## License
+
+MIT
