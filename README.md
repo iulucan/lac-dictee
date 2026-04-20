@@ -5,6 +5,7 @@
 [![CI](https://github.com/codibrahim/lac-dictee/actions/workflows/ci.yml/badge.svg)](https://github.com/codibrahim/lac-dictee/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.45-red.svg)](https://streamlit.io/)
+[![HLD](https://img.shields.io/badge/architecture-HLD%20diagram-8b5cf6.svg)](https://codibrahim.github.io/lac-dictee/docs/architecture/hld-visual.html)
 
 ---
 
@@ -101,6 +102,14 @@ lac-dictee/
 ├── requirements.txt
 └── README.md
 ```
+
+---
+
+## Architecture
+
+**[→ View Interactive HLD Diagram](https://codibrahim.github.io/lac-dictee/docs/architecture/hld-visual.html)**
+
+Full system architecture with flow diagrams, model selection rationale, sprint roadmap, and security model.
 
 ---
 
