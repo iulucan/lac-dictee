@@ -33,9 +33,9 @@
 | Item | Sprint | Status |
 |------|--------|--------|
 | Project structure + skeletons | Sprint 1 | ✅ Done |
-| OCR image upload | Sprint 1 | 🔄 In Progress |
-| Claude correction engine | Sprint 1 | 🔄 In Progress |
-| Error report UI | Sprint 1 | 🔄 In Progress |
+| OCR image upload | Sprint 1 | ✅ Done |
+| Claude correction engine | Sprint 1 | ✅ Done |
+| Error report UI | Sprint 1 | ✅ Done |
 | PDF export | Sprint 2 | ⏳ Planned |
 | Persistence (JSON/SQLite) | Sprint 2 | ⏳ Planned |
 | Triage Log | Sprint 2 | ⏳ Planned |

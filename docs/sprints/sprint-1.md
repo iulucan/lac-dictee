@@ -16,22 +16,22 @@
 | # | Title | Status |
 |---|-------|--------|
 | [#2](https://github.com/codibrahim/lac-dictee/issues/2) | Project setup: Python environment + dependencies | ✅ Done |
-| [#3](https://github.com/codibrahim/lac-dictee/issues/3) | OCR: Image upload and text extraction | 🔄 In Progress |
-| [#4](https://github.com/codibrahim/lac-dictee/issues/4) | AI correction: Claude compares OCR text vs correct text | 🔄 In Progress |
-| [#5](https://github.com/codibrahim/lac-dictee/issues/5) | UI: Error report display | ⏳ To Do |
+| [#3](https://github.com/codibrahim/lac-dictee/issues/3) | OCR: Image upload and text extraction | ✅ Done |
+| [#4](https://github.com/codibrahim/lac-dictee/issues/4) | AI correction: Claude compares OCR text vs correct text | ✅ Done |
+| [#5](https://github.com/codibrahim/lac-dictee/issues/5) | UI: Error report display | ✅ Done |
 
 ---
 
 ## Definition of Done for Sprint 1
 
-- [ ] `streamlit run app.py` launches without errors
-- [ ] Upload a JPG photo → OCR text appears in UI
-- [ ] Enter correct text → Claude returns structured JSON error report
-- [ ] Error report shows: score, error list with type + explanation
-- [ ] All credentials loaded from `.env`
-- [ ] Tests pass (`pytest tests/`)
-- [ ] CI green on GitHub Actions
-- [ ] PR merged to `main`
+- [x] `streamlit run app.py` launches without errors
+- [x] Upload a JPG photo → OCR text appears in UI
+- [x] Enter correct text → Claude returns structured JSON error report
+- [x] Error report shows: score, error list with type + explanation
+- [x] All credentials loaded from `.env`
+- [x] Tests pass — 11/11 passed (`pytest tests/`)
+- [ ] CI green on GitHub Actions *(ci.yml pending — needs workflow token scope)*
+- [x] PR #11 merged to `main`
 
 ---
 
