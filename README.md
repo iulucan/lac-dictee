@@ -140,12 +140,6 @@ See [`docs/classroom/`](docs/classroom/) for full assignment details.
 
 ---
 
-## Inspiration
-
-Inspired by [DiktatMeister](https://diktatmeister.de) — a German dictation app built for immigrant families in Germany.
-
----
-
 ## License
 
 MIT
