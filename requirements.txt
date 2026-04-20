@@ -1,0 +1,18 @@
+# UI
+streamlit==1.45.0
+
+# OCR
+pytesseract==0.3.13
+Pillow==11.2.1
+
+# AI
+anthropic==0.52.0
+
+# PDF Export
+fpdf2==2.8.3
+
+# Environment
+python-dotenv==1.1.0
+
+# Data
+# sqlite3 is built-in to Python
