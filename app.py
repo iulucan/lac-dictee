@@ -7,21 +7,68 @@ import streamlit as st
 from dotenv import load_dotenv
 from src.ocr import extract_text_from_image
 from src.correction import correct_dictation
+from src.pdf_export import generate_pdf
+from src.storage import save_correction, list_corrections
 
 load_dotenv()
 
 st.set_page_config(
     page_title="LacDictée",
     page_icon="🇫🇷",
-    layout="centered",
+    layout="wide",
 )
 
-# ── Header ──────────────────────────────────────────────────────────────────
+# ── Sidebar — correction history ─────────────────────────────────────────────
+with st.sidebar:
+    st.title("📋 History")
+    st.caption("Last 20 corrections")
+    records = list_corrections(limit=20)
+    if not records:
+        st.info("No corrections saved yet.")
+    else:
+        for rec in records:
+            label = rec.student_name or "Unknown"
+            date_short = rec.created_at[:10]
+            badge = "🟢" if rec.score >= 80 else "🟡" if rec.score >= 60 else "🔴"
+            if st.button(
+                f"{badge} {label} — {rec.score}/100\n{date_short}",
+                key=f"rec_{rec.id}",
+                use_container_width=True,
+            ):
+                st.session_state["sidebar_record"] = rec
+
+    # ── Show selected record ──────────────────────────────────────────────────
+    if "sidebar_record" in st.session_state:
+        rec = st.session_state["sidebar_record"]
+        st.divider()
+        st.subheader(f"📄 {rec.student_name or 'Unknown'}")
+        st.caption(rec.created_at[:10])
+        st.metric("Score", f"{rec.score} / 100")
+        correction = rec.to_correction_result()
+        pdf_bytes = generate_pdf(correction, rec.student_name, rec.correct_text)
+        st.download_button(
+            "⬇️ Download PDF",
+            data=pdf_bytes,
+            file_name=f"lacdictee_{rec.student_name or 'report'}_{rec.created_at[:10]}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+
+# ── Main area ─────────────────────────────────────────────────────────────────
 st.title("🇫🇷 LacDictée")
 st.caption("AI-powered French dictation correction for teachers")
 st.divider()
 
-# ── Step 1: Upload ───────────────────────────────────────────────────────────
+# ── Student name ──────────────────────────────────────────────────────────────
+student_name = st.text_input(
+    "Student name (optional)",
+    placeholder="e.g. Marie Dupont",
+    key="student_name",
+)
+
+st.divider()
+
+# ── Step 1: Upload ────────────────────────────────────────────────────────────
 st.subheader("Step 1 — Upload student's dictation photo")
 uploaded_file = st.file_uploader(
     "Upload a photo of the student's handwritten dictation",
@@ -30,7 +77,6 @@ uploaded_file = st.file_uploader(
 )
 
 ocr_text = ""
-ocr_confidence = None
 
 if uploaded_file:
     col_img, col_info = st.columns([2, 1])
@@ -41,13 +87,11 @@ if uploaded_file:
         uploaded_file.seek(0)
         result = extract_text_from_image(uploaded_file)
         ocr_text = result.text
-        ocr_confidence = result.confidence
 
     if result.warning:
         st.warning(result.warning)
     else:
-        conf_pct = int(ocr_confidence * 100)
-        st.success(f"OCR completed — confidence: {conf_pct}%")
+        st.success(f"OCR completed — confidence: {int(result.confidence * 100)}%")
 
     st.subheader("Extracted text (OCR)")
     st.caption("Review and correct any OCR mistakes before proceeding.")
@@ -60,7 +104,7 @@ if uploaded_file:
 
 st.divider()
 
-# ── Step 2: Correct text ─────────────────────────────────────────────────────
+# ── Step 2: Reference text ────────────────────────────────────────────────────
 st.subheader("Step 2 — Enter the correct dictation text")
 correct_text = st.text_area(
     "Reference text (what the student should have written):",
@@ -82,28 +126,31 @@ if st.button("✅ Correct dictation", disabled=run_disabled, use_container_width
             correct_text=correct_text,
         )
 
+    # Save to SQLite
+    save_correction(correction, student_name, correct_text, ocr_text)
+
     st.divider()
     st.subheader("Step 3 — Error Report")
 
     # ── Score metrics ─────────────────────────────────────────────────────────
     col1, col2, col3 = st.columns(3)
-    score_color = "green" if correction.score >= 80 else "orange" if correction.score >= 60 else "red"
     col1.metric("Score", f"{correction.score} / 100")
     col2.metric("Errors found", correction.error_count)
     col3.metric("Total words", correction.total_words)
+
+    type_labels = {
+        "spelling":     ("🔴", "Spelling"),
+        "grammar":      ("🟠", "Grammar"),
+        "accent":       ("🟡", "Accent"),
+        "missing_word": ("🔵", "Missing word"),
+        "extra_word":   ("⚪", "Extra word"),
+    }
 
     if correction.error_count == 0:
         st.success("🎉 Perfect dictation! No errors found.")
     else:
         # ── Error type breakdown ──────────────────────────────────────────────
         st.subheader("Error breakdown")
-        type_labels = {
-            "spelling":     ("🔴", "Spelling"),
-            "grammar":      ("🟠", "Grammar"),
-            "accent":       ("🟡", "Accent"),
-            "missing_word": ("🔵", "Missing word"),
-            "extra_word":   ("⚪", "Extra word"),
-        }
         by_type = correction.errors_by_type
         cols = st.columns(len(by_type) if by_type else 1)
         for i, (etype, count) in enumerate(by_type.items()):
@@ -117,7 +164,14 @@ if st.button("✅ Correct dictation", disabled=run_disabled, use_container_width
             with st.expander(f"{icon} **{err.wrong}** → `{err.correct}` ({label})"):
                 st.write(err.explanation)
 
-    # ── Store result in session for future PDF export (Sprint 2) ─────────────
-    st.session_state["last_correction"] = correction
-    st.session_state["last_ocr_text"] = ocr_text
-    st.session_state["last_correct_text"] = correct_text
+    # ── PDF download ──────────────────────────────────────────────────────────
+    st.divider()
+    pdf_bytes = generate_pdf(correction, student_name, correct_text)
+    fname = f"lacdictee_{student_name or 'report'}_{__import__('datetime').date.today()}.pdf"
+    st.download_button(
+        "⬇️ Download PDF Report",
+        data=pdf_bytes,
+        file_name=fname,
+        mime="application/pdf",
+        use_container_width=True,
+    )
