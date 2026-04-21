@@ -125,25 +125,11 @@ Full system architecture with flow diagrams, model selection rationale, sprint r
 
 ---
 
-## Agile
+## Wiki
 
-### Sprint Roadmap
+Full project documentation — sprints, deliverables, business model, architecture diagrams:
 
-| Sprint | Dates | Goal | Status |
-|--------|-------|------|--------|
-| **Sprint 1** | Apr 20 – Apr 27 | MVP: upload → OCR → Claude correction → error report | 🔄 In Progress |
-| **Sprint 2** | Apr 28 – May 4 | PDF export + multi-student + Triage Log | ⏳ Planned |
-| **Sprint 3** | May 5 – May 11 | Teacher dashboard + dictation library + pitch deck | ⏳ Planned |
-
-### Classroom Context
-
-| Week | Due Date | Deliverable |
-|------|----------|-------------|
-| Week 5 | Apr 27 | Problem Statement · Lean Canvas · Technical Blueprint · Pitch Deck |
-| Week 6 | May 4 | Functional MVP · Triage Log · Updated DoD |
-| Week 7 | May 11 | Final Pitch · Security Audit · 300-word Reflection |
-
-> Full sprint details → [Wiki](https://github.com/codibrahim/lac-dictee/wiki)
+**[→ github.com/codibrahim/lac-dictee/wiki](https://github.com/codibrahim/lac-dictee/wiki)**
 
 ---
 
