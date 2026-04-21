@@ -113,16 +113,6 @@ Full system architecture with flow diagrams, model selection rationale, sprint r
 
 ---
 
-## Sprint Roadmap
-
-| Sprint | Dates | Goal | Status |
-|--------|-------|------|--------|
-| **Sprint 1** | Apr 20 – Apr 27 | MVP: upload → OCR → Claude correction → error report | 🔄 In Progress |
-| **Sprint 2** | Apr 28 – May 4 | PDF export + multi-student + Triage Log | ⏳ Planned |
-| **Sprint 3** | May 5 – May 11 | Teacher dashboard + dictation library + pitch deck | ⏳ Planned |
-
----
-
 ## Definition of Done
 
 - [ ] LLM performs dictation correction that standard code cannot replicate
@@ -135,7 +125,17 @@ Full system architecture with flow diagrams, model selection rationale, sprint r
 
 ---
 
-## Classroom Context
+## Agile
+
+### Sprint Roadmap
+
+| Sprint | Dates | Goal | Status |
+|--------|-------|------|--------|
+| **Sprint 1** | Apr 20 – Apr 27 | MVP: upload → OCR → Claude correction → error report | 🔄 In Progress |
+| **Sprint 2** | Apr 28 – May 4 | PDF export + multi-student + Triage Log | ⏳ Planned |
+| **Sprint 3** | May 5 – May 11 | Teacher dashboard + dictation library + pitch deck | ⏳ Planned |
+
+### Classroom Context
 
 | Week | Due Date | Deliverable |
 |------|----------|-------------|
@@ -143,7 +143,7 @@ Full system architecture with flow diagrams, model selection rationale, sprint r
 | Week 6 | May 4 | Functional MVP · Triage Log · Updated DoD |
 | Week 7 | May 11 | Final Pitch · Security Audit · 300-word Reflection |
 
-See [`docs/classroom/`](docs/classroom/) for full assignment details.
+> Full sprint details → [Wiki](https://github.com/codibrahim/lac-dictee/wiki)
 
 ---
 
