@@ -1,20 +1,12 @@
 """
 Tests for the correction module.
-Uses a mocked Anthropic client — no API calls during CI.
+Mocks both Claude and Gemma engines — no API calls during CI.
 """
 
 import json
 import pytest
 from unittest.mock import patch, MagicMock
 from src.correction import correct_dictation, CorrectionResult, DictationError
-
-
-def make_mock_client(response_data: dict):
-    mock_msg = MagicMock()
-    mock_msg.content = [MagicMock(text=json.dumps(response_data))]
-    mock_client = MagicMock()
-    mock_client.messages.create.return_value = mock_msg
-    return mock_client
 
 
 ONE_ERROR_RESPONSE = {
@@ -50,20 +42,36 @@ ACCENT_ERROR_RESPONSE = {
 }
 
 
-@patch("src.correction._get_client")
-def test_returns_correction_result(mock_get_client):
-    mock_get_client.return_value = make_mock_client(ONE_ERROR_RESPONSE)
-    result = correct_dictation("les maison sont belles", "les maisons sont belles")
+def _mock_claude(response_data: dict):
+    """Patch _claude_correct to return a fixed CorrectionResult (with API key set)."""
+    from src.correction import _parse_correction_json
+    from unittest.mock import patch as _patch
+    import contextlib
+
+    @contextlib.contextmanager
+    def _ctx():
+        with _patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
+            with _patch(
+                "src.correction._claude_correct",
+                return_value=_parse_correction_json(json.dumps(response_data)),
+            ):
+                yield
+
+    return _ctx()
+
+
+def test_returns_correction_result():
+    with _mock_claude(ONE_ERROR_RESPONSE):
+        result = correct_dictation("les maison sont belles", "les maisons sont belles")
     assert isinstance(result, CorrectionResult)
     assert result.score == 90
     assert result.total_words == 10
     assert result.error_count == 1
 
 
-@patch("src.correction._get_client")
-def test_error_fields_populated(mock_get_client):
-    mock_get_client.return_value = make_mock_client(ONE_ERROR_RESPONSE)
-    result = correct_dictation("les maison", "les maisons")
+def test_error_fields_populated():
+    with _mock_claude(ONE_ERROR_RESPONSE):
+        result = correct_dictation("les maison", "les maisons")
     err = result.errors[0]
     assert isinstance(err, DictationError)
     assert err.wrong == "maison"
@@ -72,24 +80,21 @@ def test_error_fields_populated(mock_get_client):
     assert "plural" in err.explanation.lower()
 
 
-@patch("src.correction._get_client")
-def test_perfect_dictation(mock_get_client):
-    mock_get_client.return_value = make_mock_client(PERFECT_RESPONSE)
-    result = correct_dictation("le chat mange", "le chat mange")
+def test_perfect_dictation():
+    with _mock_claude(PERFECT_RESPONSE):
+        result = correct_dictation("le chat mange", "le chat mange")
     assert result.score == 100
     assert result.errors == []
     assert result.error_count == 0
 
 
-@patch("src.correction._get_client")
-def test_accent_error_type(mock_get_client):
-    mock_get_client.return_value = make_mock_client(ACCENT_ERROR_RESPONSE)
-    result = correct_dictation("un eleve", "un élève")
+def test_accent_error_type():
+    with _mock_claude(ACCENT_ERROR_RESPONSE):
+        result = correct_dictation("un eleve", "un élève")
     assert result.errors[0].type == "accent"
 
 
-@patch("src.correction._get_client")
-def test_errors_by_type_groups_correctly(mock_get_client):
+def test_errors_by_type_groups_correctly():
     response = {
         "score": 60,
         "total_words": 10,
@@ -99,21 +104,28 @@ def test_errors_by_type_groups_correctly(mock_get_client):
             {"wrong": "c", "correct": "cc", "type": "accent", "explanation": "x"},
         ],
     }
-    mock_get_client.return_value = make_mock_client(response)
-    result = correct_dictation("a b c", "à bb cc")
+    with _mock_claude(response):
+        result = correct_dictation("a b c", "à bb cc")
     by_type = result.errors_by_type
     assert by_type["accent"] == 2
     assert by_type["spelling"] == 1
 
 
-@patch("src.correction._get_client")
-def test_handles_markdown_wrapped_json(mock_get_client):
+def test_handles_markdown_wrapped_json():
     wrapped = f"```json\n{json.dumps(PERFECT_RESPONSE)}\n```"
-    mock_msg = MagicMock()
-    mock_msg.content = [MagicMock(text=wrapped)]
-    mock_client = MagicMock()
-    mock_client.messages.create.return_value = mock_msg
-    mock_get_client.return_value = mock_client
+    from src.correction import _parse_correction_json
+    result = _parse_correction_json(wrapped)
+    assert result.score == 100
 
-    result = correct_dictation("le chat", "le chat")
+
+def test_falls_back_to_gemma_when_no_credits():
+    """When ANTHROPIC_API_KEY is absent, Gemma fallback is used."""
+    import os
+    from src.correction import _parse_correction_json
+    gemma_result = _parse_correction_json(json.dumps(PERFECT_RESPONSE))
+
+    env_without_key = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    with patch.dict("os.environ", env_without_key, clear=True):
+        with patch("src.correction._gemma_correct", return_value=gemma_result):
+            result = correct_dictation("le chat", "le chat")
     assert result.score == 100

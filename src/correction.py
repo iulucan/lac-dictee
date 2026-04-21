@@ -1,11 +1,16 @@
 """
-Correction module — uses Claude AI to compare student text vs correct text
-and return a structured error report with explanations.
+Correction module — compares student text vs correct text and returns a structured
+error report with explanations.
+
+Priority:
+  1. Claude (claude-sonnet-4-6) — best quality
+  2. Gemma-2-9B via HuggingFace Space — free fallback
 """
 
 import os
 import json
 import anthropic
+from gradio_client import Client
 from dataclasses import dataclass, field
 from typing import List
 
@@ -36,22 +41,7 @@ class CorrectionResult:
         return counts
 
 
-_client = None
-
-
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY not set. Add it to your .env file."
-            )
-        _client = anthropic.Anthropic(api_key=api_key)
-    return _client
-
-
-_SYSTEM_PROMPT = """\
+_CORRECTION_PROMPT = """\
 You are an expert French language teacher and proofreader.
 
 You receive:
@@ -89,68 +79,6 @@ Important:
 - Do not add any text, explanation, or markdown outside the JSON object\
 """
 
-
-def correct_dictation(student_text: str, correct_text: str) -> CorrectionResult:
-    """
-    Compare student's dictation against the correct reference using Claude.
-
-    Args:
-        student_text: OCR-extracted text from the student's handwriting
-        correct_text: The teacher's original correct dictation text
-
-    Returns:
-        CorrectionResult with score, total_words, and list of DictationError objects.
-
-    Raises:
-        RuntimeError: if ANTHROPIC_API_KEY is not set
-        ValueError: if Claude returns malformed JSON
-    """
-    client = _get_client()
-
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        system=_SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"STUDENT TEXT:\n{student_text}\n\n"
-                    f"CORRECT TEXT:\n{correct_text}"
-                ),
-            }
-        ],
-    )
-
-    raw = message.content[0].text.strip()
-
-    # Strip markdown code fences if present
-    if raw.startswith("```"):
-        lines = raw.split("\n")
-        raw = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Claude returned invalid JSON: {e}\nRaw response: {raw[:200]}")
-
-    errors = [
-        DictationError(
-            wrong=err.get("wrong", ""),
-            correct=err.get("correct", ""),
-            type=err.get("type", "spelling"),
-            explanation=err.get("explanation", ""),
-        )
-        for err in data.get("errors", [])
-    ]
-
-    return CorrectionResult(
-        score=int(data.get("score", 0)),
-        total_words=int(data.get("total_words", 1)),
-        errors=errors,
-    )
-
-
 _RECONSTRUCT_PROMPT = """\
 You are a French language expert. You receive OCR-extracted text from a student's
 handwritten French dictation. The OCR may have introduced errors (wrong characters,
@@ -163,21 +91,134 @@ Your task: reconstruct the most likely ORIGINAL correct French dictation text.
 - Return ONLY the reconstructed text, no explanation, no commentary\
 """
 
+_HF_SPACE = "huggingface-projects/gemma-2-9b-it"
+
+
+def _parse_correction_json(raw: str) -> CorrectionResult:
+    """Parse JSON response into CorrectionResult. Strips markdown fences."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    # Find first { to skip any leading text
+    brace = raw.find("{")
+    if brace > 0:
+        raw = raw[brace:]
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON: {e}\nRaw: {raw[:300]}")
+
+    errors = [
+        DictationError(
+            wrong=err.get("wrong", ""),
+            correct=err.get("correct", ""),
+            type=err.get("type", "spelling"),
+            explanation=err.get("explanation", ""),
+        )
+        for err in data.get("errors", [])
+    ]
+    return CorrectionResult(
+        score=int(data.get("score", 0)),
+        total_words=int(data.get("total_words", 1)),
+        errors=errors,
+    )
+
+
+def _claude_correct(student_text: str, correct_text: str) -> CorrectionResult:
+    """Correction via Claude (primary)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY not set.")
+
+    client = anthropic.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2048,
+        system=_CORRECTION_PROMPT,
+        messages=[{
+            "role": "user",
+            "content": f"STUDENT TEXT:\n{student_text}\n\nCORRECT TEXT:\n{correct_text}",
+        }],
+    )
+    return _parse_correction_json(message.content[0].text)
+
+
+def _gemma_correct(student_text: str, correct_text: str) -> CorrectionResult:
+    """Correction via Gemma-2-9B on HuggingFace Space (free fallback)."""
+    prompt = (
+        f"{_CORRECTION_PROMPT}\n\n"
+        f"STUDENT TEXT:\n{student_text}\n\n"
+        f"CORRECT TEXT:\n{correct_text}"
+    )
+    client = Client(_HF_SPACE, verbose=False)
+    result = client.predict(
+        message=prompt,
+        max_new_tokens=2048,
+        temperature=0.1,
+        api_name="/generate",
+    )
+    raw = result if isinstance(result, str) else str(result)
+    return _parse_correction_json(raw)
+
+
+def correct_dictation(student_text: str, correct_text: str) -> CorrectionResult:
+    """
+    Compare student's dictation against the correct reference.
+
+    Tries Claude first, falls back to Gemma-2-9B (free) if unavailable.
+
+    Args:
+        student_text: OCR-extracted text from the student's handwriting
+        correct_text: The teacher's original correct dictation text
+
+    Returns:
+        CorrectionResult with score, total_words, and list of DictationError objects.
+    """
+    # 1. Claude (best quality)
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            return _claude_correct(student_text, correct_text)
+        except anthropic.BadRequestError as e:
+            if "credit balance" not in str(e):
+                raise
+        except Exception:
+            raise
+
+    # 2. Gemma-2-9B via HuggingFace Space (free)
+    return _gemma_correct(student_text, correct_text)
+
 
 def reconstruct_reference(ocr_text: str) -> str:
     """
-    Ask Claude to reconstruct the likely correct French text from noisy OCR output.
-    Used when the teacher does not have the original reference text.
-
-    Returns the reconstructed text as a plain string.
+    Reconstruct the likely correct French text from noisy OCR output.
+    Tries Claude first, falls back to Gemma-2-9B.
     """
-    client = _get_client()
+    # 1. Claude
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system=_RECONSTRUCT_PROMPT,
+                messages=[{"role": "user", "content": f"OCR TEXT:\n{ocr_text}"}],
+            )
+            return message.content[0].text.strip()
+        except anthropic.BadRequestError as e:
+            if "credit balance" not in str(e):
+                raise
+        except Exception:
+            raise
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        system=_RECONSTRUCT_PROMPT,
-        messages=[{"role": "user", "content": f"OCR TEXT:\n{ocr_text}"}],
+    # 2. Gemma fallback
+    prompt = f"{_RECONSTRUCT_PROMPT}\n\nOCR TEXT:\n{ocr_text}"
+    hf_client = Client(_HF_SPACE, verbose=False)
+    result = hf_client.predict(
+        message=prompt,
+        max_new_tokens=512,
+        temperature=0.1,
+        api_name="/generate",
     )
-
-    return message.content[0].text.strip()
+    return (result if isinstance(result, str) else str(result)).strip()
