@@ -149,3 +149,35 @@ def correct_dictation(student_text: str, correct_text: str) -> CorrectionResult:
         total_words=int(data.get("total_words", 1)),
         errors=errors,
     )
+
+
+_RECONSTRUCT_PROMPT = """\
+You are a French language expert. You receive OCR-extracted text from a student's
+handwritten French dictation. The OCR may have introduced errors (wrong characters,
+missing accents, garbled words).
+
+Your task: reconstruct the most likely ORIGINAL correct French dictation text.
+- Fix obvious OCR artifacts (stray characters, broken words, wrong symbols)
+- Restore French accents where clearly missing (é, è, ê, à, â, ù, û, ï, ô, œ, æ, ç)
+- Do NOT invent new content — only clean what is clearly an OCR error
+- Return ONLY the reconstructed text, no explanation, no commentary\
+"""
+
+
+def reconstruct_reference(ocr_text: str) -> str:
+    """
+    Ask Claude to reconstruct the likely correct French text from noisy OCR output.
+    Used when the teacher does not have the original reference text.
+
+    Returns the reconstructed text as a plain string.
+    """
+    client = _get_client()
+
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        system=_RECONSTRUCT_PROMPT,
+        messages=[{"role": "user", "content": f"OCR TEXT:\n{ocr_text}"}],
+    )
+
+    return message.content[0].text.strip()

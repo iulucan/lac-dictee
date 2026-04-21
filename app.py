@@ -6,7 +6,7 @@ Run: streamlit run app.py
 import streamlit as st
 from dotenv import load_dotenv
 from src.ocr import extract_text_from_image
-from src.correction import correct_dictation
+from src.correction import correct_dictation, reconstruct_reference
 from src.pdf_export import generate_pdf
 from src.storage import save_correction, list_corrections
 
@@ -106,8 +106,31 @@ st.divider()
 
 # ── Step 2: Reference text ────────────────────────────────────────────────────
 st.subheader("Step 2 — Enter the correct dictation text")
+
+if ocr_text.strip():
+    col_btn, col_info = st.columns([1, 2])
+    with col_btn:
+        generate_clicked = st.button(
+            "🔮 Generate reference text",
+            help="Ask Claude to reconstruct the likely correct text from the OCR output.",
+            use_container_width=True,
+        )
+    with col_info:
+        st.warning(
+            "⚠️ **Lower accuracy mode** — without the original text, "
+            "Claude guesses the reference. Results may miss real errors.",
+            icon=None,
+        )
+
+    if generate_clicked:
+        with st.spinner("Claude is reconstructing the reference text…"):
+            st.session_state["generated_reference"] = reconstruct_reference(ocr_text)
+
+reference_default = st.session_state.get("generated_reference", "")
+
 correct_text = st.text_area(
     "Reference text (what the student should have written):",
+    value=reference_default,
     height=140,
     placeholder="Le chat mange une souris dans le jardin.",
     key="correct_text_area",
