@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LacDictée — Market: Suisse Romande</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: white;
+      overflow: hidden;
+    }
+
+    #map { width: 100vw; height: 100vh; }
+
+    /* ── Header ── */
+    #header {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      text-align: center;
+      pointer-events: none;
+    }
+    #header h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+    }
+    #header p {
+      font-size: 1rem;
+      color: #94a3b8;
+      margin-top: 4px;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.8);
+    }
+
+    /* ── Step indicator ── */
+    #steps {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .step {
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      background: rgba(255,255,255,0.07);
+      color: #475569;
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: all 0.5s ease;
+    }
+    .step.active {
+      background: rgba(99, 102, 241, 0.85);
+      color: white;
+      border-color: rgba(99,102,241,0.5);
+      box-shadow: 0 0 16px rgba(99,102,241,0.4);
+    }
+    .step.done {
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      border-color: rgba(99,102,241,0.2);
+    }
+
+    /* ── Stats cards ── */
+    #stats {
+      position: absolute;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      display: flex;
+      gap: 16px;
+      opacity: 0;
+      transition: opacity 1.2s ease;
+      white-space: nowrap;
+    }
+    #stats.visible { opacity: 1; }
+
+    .card {
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      border-radius: 14px;
+      padding: 16px 24px;
+      text-align: center;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .card-number {
+      font-size: 1.7rem;
+      font-weight: 800;
+      color: #818cf8;
+      line-height: 1;
+    }
+    .card-label {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-top: 6px;
+    }
+
+    /* ── Canton tooltip ── */
+    .leaflet-tooltip {
+      background: #1e293b;
+      border: 1px solid #4f46e5;
+      color: white;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="header">
+    <h1>🇫🇷 LacDictée</h1>
+    <p>Primary Market — Suisse Romande, Switzerland</p>
+  </div>
+
+  <div id="steps">
+    <div class="step active" id="s-world">🌍 World</div>
+    <div class="step"        id="s-europe">🇪🇺 Europe</div>
+    <div class="step"        id="s-ch">🇨🇭 Switzerland</div>
+    <div class="step"        id="s-romande">📍 Suisse Romande</div>
+  </div>
+
+  <div id="stats">
+    <div class="card">
+      <div class="card-number">~18,600</div>
+      <div class="card-label">Teachers in Romandy<br><span style="color:#4f46e5;font-size:0.7rem">Swiss FSO</span></div>
+    </div>
+    <div class="card">
+      <div class="card-number">367,500</div>
+      <div class="card-label">Teachers in France<br><span style="color:#4f46e5;font-size:0.7rem">INSEE 2024–25</span></div>
+    </div>
+    <div class="card">
+      <div class="card-number">CHF 9<span style="font-size:1rem">/mo</span></div>
+      <div class="card-label">Teacher Pro Plan</div>
+    </div>
+    <div class="card">
+      <div class="card-number">~94%</div>
+      <div class="card-label">Gross Margin</div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // ── Map init ─────────────────────────────────────────────────────────────
+    const map = L.map('map', {
+      zoomControl: false,
+      attributionControl: true,
+    }).setView([20, 10], 2);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap · © CARTO',
+    }).addTo(map);
+
+    // ── Suisse Romande — approximate canton polygons ──────────────────────────
+    const romandeGeoJSON = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: { name: "Genève (GE)" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [5.96, 46.18], [6.12, 46.13], [6.32, 46.14],
+              [6.32, 46.38], [6.10, 46.38], [5.96, 46.30],
+              [5.96, 46.18]
+            ]]
+          }
+        },
+        {
+          type: "Feature",
+          properties: { name: "Vaud (VD)" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [6.10, 46.38], [6.32, 46.38], [6.80, 46.22],
+              [7.20, 46.38], [7.20, 47.07], [6.82, 47.05],
+              [6.45, 46.95], [6.10, 46.95], [6.10, 46.38]
+            ]]
+          }
+        },
+        {
+          type: "Feature",
+          properties: { name: "Fribourg (FR)" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [6.82, 46.55], [7.35, 46.55], [7.35, 47.02],
+              [6.82, 47.02], [6.82, 46.55]
+            ]]
+          }
+        },
+        {
+          type: "Feature",
+          properties: { name: "Neuchâtel (NE)" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [6.60, 46.88], [7.07, 46.88], [7.07, 47.10],
+              [6.60, 47.10], [6.60, 46.88]
+            ]]
+          }
+        },
+        {
+          type: "Feature",
+          properties: { name: "Jura (JU)" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [6.82, 47.10], [7.57, 47.10], [7.57, 47.52],
+              [6.82, 47.52], [6.82, 47.10]
+            ]]
+          }
+        },
+        {
+          type: "Feature",
+          properties: { name: "Valais (VS)" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [6.87, 45.92], [8.50, 45.92], [8.50, 46.45],
+              [7.82, 46.65], [7.20, 46.38], [6.80, 46.22],
+              [6.87, 45.92]
+            ]]
+          }
+        }
+      ]
+    };
+
+    // ── Step indicator helper ─────────────────────────────────────────────────
+    const stepIds = ['world', 'europe', 'ch', 'romande'];
+    function setStep(active) {
+      stepIds.forEach((id, i) => {
+        const el = document.getElementById('s-' + id);
+        el.className = 'step';
+        const ai = stepIds.indexOf(active);
+        if (i < ai) el.classList.add('done');
+        else if (i === ai) el.classList.add('active');
+      });
+    }
+
+    // ── Zoom animation sequence ───────────────────────────────────────────────
+    // Step 1 — already at world view (zoom 2)
+
+    setTimeout(() => {
+      setStep('europe');
+      map.flyTo([48, 10], 4, { duration: 2.5, easeLinearity: 0.4 });
+    }, 1800);
+
+    setTimeout(() => {
+      setStep('ch');
+      map.flyTo([46.8, 8.2], 7, { duration: 2.5, easeLinearity: 0.4 });
+    }, 5000);
+
+    setTimeout(() => {
+      setStep('romande');
+      map.flyTo([46.55, 6.85], 9, { duration: 2.5, easeLinearity: 0.4 });
+    }, 8200);
+
+    setTimeout(() => {
+      // Add Romande highlight
+      L.geoJSON(romandeGeoJSON, {
+        style: {
+          color: '#6366f1',
+          fillColor: '#818cf8',
+          fillOpacity: 0.30,
+          weight: 2,
+          dashArray: '5, 4',
+        },
+        onEachFeature: (feature, layer) => {
+          layer.bindTooltip(feature.properties.name, {
+            sticky: true,
+            className: 'canton-tooltip',
+          });
+          layer.on('mouseover', function () {
+            this.setStyle({ fillOpacity: 0.55, weight: 3 });
+          });
+          layer.on('mouseout', function () {
+            this.setStyle({ fillOpacity: 0.30, weight: 2 });
+          });
+        }
+      }).addTo(map);
+
+      // Show stats cards
+      setTimeout(() => {
+        document.getElementById('stats').classList.add('visible');
+      }, 1200);
+
+    }, 10800);
+  </script>
+</body>
+</html>

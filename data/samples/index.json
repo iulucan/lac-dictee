@@ -1,0 +1,18 @@
+[
+  {
+    "id": "local_001",
+    "source": "local",
+    "level": "beginner",
+    "title": "A1 — Phrases simples",
+    "word_count": 28,
+    "file": "a1-beginner.txt"
+  },
+  {
+    "id": "local_002",
+    "source": "local",
+    "level": "elementary",
+    "title": "A2 — Une journée scolaire",
+    "word_count": 48,
+    "file": "a2-elementary.txt"
+  }
+]
