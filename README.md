@@ -137,8 +137,6 @@ Full system architecture with flow diagrams, model selection rationale, sprint r
 
 ## Classroom Context
 
-This is **Ibrahim Ulucan**'s Solo Specialist Project for [Powercoders Bootcamp 2026](https://powercoders.org/).
-
 | Week | Due Date | Deliverable |
 |------|----------|-------------|
 | Week 5 | Apr 27 | Problem Statement · Lean Canvas · Technical Blueprint · Pitch Deck |
