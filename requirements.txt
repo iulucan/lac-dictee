@@ -1,5 +1,5 @@
 # UI
-streamlit==1.45.0
+streamlit==1.44.1
 
 # OCR
 pytesseract==0.3.13
