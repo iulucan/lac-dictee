@@ -1,19 +1,23 @@
 """
 OCR module — extracts text from handwritten dictation images and scanned PDFs.
 
-Primary: Claude Vision (claude-haiku-4-5) — handles handwriting accurately.
-Fallback: Tesseract (requires brew install tesseract tesseract-lang on macOS).
-PDF support: PyMuPDF converts PDF pages to images before OCR.
+Priority:
+  1. Claude Vision (claude-haiku-4-5) — best for handwriting, fast
+  2. Infinity-Parser-7B via HuggingFace Space — free, excellent on scanned docs
+  3. Tesseract — last resort, poor on handwriting
+PDF support: PyMuPDF converts PDF pages to images for Tesseract path.
 """
 
 import os
 import base64
 import io
+import tempfile
 from dataclasses import dataclass
 
 import anthropic
 import fitz  # PyMuPDF
 import pytesseract
+from gradio_client import Client, handle_file
 from PIL import Image, ImageFilter, ImageEnhance, ImageOps
 
 
@@ -35,6 +39,9 @@ Rules:
 - Output ONLY the transcribed text, nothing else\
 """
 
+_HF_SPACE = "infly/infinity-parser"
+_HF_MODEL = "Infinity-Parser-7B"
+
 
 def _is_pdf(raw_bytes: bytes) -> bool:
     return raw_bytes[:4] == b"%PDF"
@@ -48,9 +55,8 @@ def _pdf_to_images(raw_bytes: bytes, dpi: int = 200) -> list[bytes]:
     pages = []
     for page in doc:
         pix = page.get_pixmap(matrix=mat)
-        # Skip blank pages (almost all white)
         if pix.samples.count(b"\xff") > len(pix.samples) * 0.98:
-            continue
+            continue  # skip blank pages
         pages.append(pix.tobytes("png"))
     return pages
 
@@ -64,21 +70,15 @@ def _claude_vision_ocr(raw_bytes: bytes) -> OCRResult:
     client = anthropic.Anthropic(api_key=api_key)
 
     if _is_pdf(raw_bytes):
-        # Send PDF as document — Claude API natively supports PDFs
         b64 = base64.standard_b64encode(raw_bytes).decode("utf-8")
         content = [
             {
                 "type": "document",
-                "source": {
-                    "type": "base64",
-                    "media_type": "application/pdf",
-                    "data": b64,
-                },
+                "source": {"type": "base64", "media_type": "application/pdf", "data": b64},
             },
             {"type": "text", "text": "Transcribe the handwritten French dictation in this document."},
         ]
     else:
-        # Image: detect JPEG vs PNG
         if raw_bytes[:3] == b"\xff\xd8\xff":
             media_type = "image/jpeg"
         elif raw_bytes[:8] == b"\x89PNG\r\n\x1a\n":
@@ -114,6 +114,50 @@ def _claude_vision_ocr(raw_bytes: bytes) -> OCRResult:
     return OCRResult(text=text, confidence=confidence, warning=warning)
 
 
+def _infinity_parser_ocr(raw_bytes: bytes) -> OCRResult:
+    """Use Infinity-Parser-7B via HuggingFace Space (free, no API key needed)."""
+    suffix = ".pdf" if _is_pdf(raw_bytes) else ".png"
+
+    # If image, convert to PNG for the Space
+    if not _is_pdf(raw_bytes):
+        image = Image.open(io.BytesIO(raw_bytes))
+        image = ImageOps.exif_transpose(image)
+        if image.mode not in ("RGB", "L"):
+            image = image.convert("RGB")
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        raw_bytes = buf.getvalue()
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(raw_bytes)
+        tmp_path = tmp.name
+
+    try:
+        client = Client(_HF_SPACE, verbose=False)
+        result = client.predict(
+            doc_path=handle_file(tmp_path),
+            prompt="Please convert the document into Markdown format.",
+            model_id=_HF_MODEL,
+            api_name="/doc_parser",
+        )
+        text = result[1].strip()
+        # Strip markdown code fences if present
+        lines = text.splitlines()
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    finally:
+        os.unlink(tmp_path)
+
+    if not text:
+        raise ValueError("Infinity-Parser returned empty result.")
+
+    illegible_count = text.count("[?]")
+    word_count = max(len(text.split()), 1)
+    confidence = max(0.0, 1.0 - illegible_count / word_count)
+
+    return OCRResult(text=text, confidence=confidence, warning="")
+
+
 def preprocess_image(image: Image.Image) -> Image.Image:
     return _preprocess_image(image)
 
@@ -127,17 +171,14 @@ def _preprocess_image(image: Image.Image) -> Image.Image:
 
 
 def _tesseract_ocr(image: Image.Image) -> OCRResult:
-    """Fallback Tesseract OCR for French text."""
+    """Last-resort Tesseract OCR."""
     try:
         data = pytesseract.image_to_data(
-            image,
-            lang="fra",
-            output_type=pytesseract.Output.DICT,
+            image, lang="fra", output_type=pytesseract.Output.DICT
         )
     except pytesseract.TesseractNotFoundError:
         raise RuntimeError(
-            "Tesseract is not installed. "
-            "macOS: brew install tesseract tesseract-lang"
+            "Tesseract is not installed. macOS: brew install tesseract tesseract-lang"
         )
 
     words, confidences = [], []
@@ -152,18 +193,12 @@ def _tesseract_ocr(image: Image.Image) -> OCRResult:
     text = " ".join(words).strip()
     avg_conf = (sum(confidences) / len(confidences) / 100) if confidences else 0.0
 
-    warning = ""
-    if avg_conf < 0.5:
-        warning = (
-            "Low OCR confidence. The image may be blurry or the handwriting hard to read. "
-            "Please review the extracted text carefully."
-        )
-
+    warning = "Low OCR confidence — please review the extracted text carefully." if avg_conf < 0.5 else ""
     return OCRResult(text=text, confidence=avg_conf, warning=warning)
 
 
 def _tesseract_pdf_ocr(raw_bytes: bytes) -> OCRResult:
-    """Tesseract fallback for PDFs: render each page and OCR."""
+    """Tesseract last-resort for PDFs: render each page then OCR."""
     page_images = _pdf_to_images(raw_bytes)
     if not page_images:
         return OCRResult(text="", confidence=0.0, warning="PDF appears to be blank.")
@@ -173,53 +208,53 @@ def _tesseract_pdf_ocr(raw_bytes: bytes) -> OCRResult:
         image = Image.open(io.BytesIO(png_bytes))
         if image.mode in ("RGBA", "P"):
             image = image.convert("RGB")
-        image = _preprocess_image(image)
-        result = _tesseract_ocr(image)
+        result = _tesseract_ocr(_preprocess_image(image))
         if result.text:
             all_texts.append(result.text)
             all_confs.append(result.confidence)
 
-    combined_text = "\n".join(all_texts).strip()
+    text = "\n".join(all_texts).strip()
     avg_conf = (sum(all_confs) / len(all_confs)) if all_confs else 0.0
-
-    warning = ""
-    if avg_conf < 0.5:
-        warning = (
-            "Low OCR confidence on scanned PDF. "
-            "Please review the extracted text carefully."
-        )
-
-    return OCRResult(text=combined_text, confidence=avg_conf, warning=warning)
+    warning = "Low OCR confidence on scanned PDF — please review carefully." if avg_conf < 0.5 else ""
+    return OCRResult(text=text, confidence=avg_conf, warning=warning)
 
 
 def extract_text_from_image(file) -> OCRResult:
     """
     Extract French text from an uploaded image or PDF file.
 
-    Tries Claude Vision first (accurate on handwriting).
-    Falls back to Tesseract if the API key is unavailable.
-    Supports JPEG, PNG, and scanned PDF files.
+    Tries engines in priority order:
+      1. Claude Vision  — best quality, requires ANTHROPIC_API_KEY + credits
+      2. Infinity-Parser-7B (HF Space) — free, great on scanned docs/photos
+      3. Tesseract — last resort
 
     Args:
         file: Streamlit UploadedFile or file-like object (jpg/jpeg/png/pdf)
 
     Returns:
-        OCRResult with extracted text, confidence estimate, and optional warning.
+        OCRResult with extracted text, confidence, and optional warning.
     """
     raw_bytes = file.read() if hasattr(file, "read") else file
     is_pdf = _is_pdf(raw_bytes)
 
-    vision_warning = ""
+    # 1. Claude Vision
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
             return _claude_vision_ocr(raw_bytes)
         except anthropic.BadRequestError as e:
-            if "credit balance" in str(e):
-                vision_warning = "Claude Vision unavailable (no API credits). Using Tesseract — review text carefully."
+            if "credit balance" not in str(e):
+                pass  # unexpected error — fall through
         except Exception:
             pass
 
-    # Tesseract fallback
+    # 2. Infinity-Parser-7B
+    try:
+        return _infinity_parser_ocr(raw_bytes)
+    except Exception:
+        pass
+
+    # 3. Tesseract (last resort)
+    warning_prefix = "Falling back to Tesseract (low quality for handwriting). "
     if is_pdf:
         result = _tesseract_pdf_ocr(raw_bytes)
     else:
@@ -227,9 +262,7 @@ def extract_text_from_image(file) -> OCRResult:
         image = ImageOps.exif_transpose(image)
         if image.mode in ("RGBA", "P"):
             image = image.convert("RGB")
-        image = _preprocess_image(image)
-        result = _tesseract_ocr(image)
+        result = _tesseract_ocr(_preprocess_image(image))
 
-    if vision_warning:
-        result.warning = f"{vision_warning} {result.warning}".strip()
+    result.warning = (warning_prefix + result.warning).strip()
     return result
