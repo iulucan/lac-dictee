@@ -71,9 +71,9 @@ st.divider()
 # ── Step 1: Upload ────────────────────────────────────────────────────────────
 st.subheader("Step 1 — Upload student's dictation photo")
 uploaded_file = st.file_uploader(
-    "Upload a photo of the student's handwritten dictation",
-    type=["jpg", "jpeg", "png"],
-    help="Take a clear photo in good lighting. The app supports jpg and png.",
+    "Upload a photo or scanned PDF of the student's handwritten dictation",
+    type=["jpg", "jpeg", "png", "pdf"],
+    help="Supports JPG, PNG photos and scanned PDF files.",
 )
 
 ocr_text = ""
@@ -81,7 +81,10 @@ ocr_text = ""
 if uploaded_file:
     col_img, col_info = st.columns([2, 1])
     with col_img:
-        st.image(uploaded_file, caption="Uploaded dictation", use_container_width=True)
+        if uploaded_file.type == "application/pdf":
+            st.info(f"PDF uploaded: {uploaded_file.name}")
+        else:
+            st.image(uploaded_file, caption="Uploaded dictation", use_container_width=True)
 
     with st.spinner("Reading handwriting with OCR…"):
         uploaded_file.seek(0)

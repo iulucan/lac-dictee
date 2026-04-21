@@ -1,8 +1,9 @@
 """
-OCR module — extracts text from handwritten dictation images.
+OCR module — extracts text from handwritten dictation images and scanned PDFs.
 
 Primary: Claude Vision (claude-haiku-4-5) — handles handwriting accurately.
 Fallback: Tesseract (requires brew install tesseract tesseract-lang on macOS).
+PDF support: PyMuPDF converts PDF pages to images before OCR.
 """
 
 import os
@@ -11,6 +12,7 @@ import io
 from dataclasses import dataclass
 
 import anthropic
+import fitz  # PyMuPDF
 import pytesseract
 from PIL import Image, ImageFilter, ImageEnhance, ImageOps
 
@@ -23,7 +25,7 @@ class OCRResult:
 
 
 _VISION_PROMPT = """\
-You are transcribing a student's handwritten French dictation from a photo.
+You are transcribing a student's handwritten French dictation from a photo or scanned document.
 
 Rules:
 - Transcribe EXACTLY what the student wrote, including spelling mistakes and missing accents
@@ -34,44 +36,70 @@ Rules:
 """
 
 
+def _is_pdf(raw_bytes: bytes) -> bool:
+    return raw_bytes[:4] == b"%PDF"
+
+
+def _pdf_to_images(raw_bytes: bytes, dpi: int = 200) -> list[bytes]:
+    """Render each non-blank PDF page as a PNG byte string."""
+    doc = fitz.open(stream=raw_bytes, filetype="pdf")
+    zoom = dpi / 72
+    mat = fitz.Matrix(zoom, zoom)
+    pages = []
+    for page in doc:
+        pix = page.get_pixmap(matrix=mat)
+        # Skip blank pages (almost all white)
+        if pix.samples.count(b"\xff") > len(pix.samples) * 0.98:
+            continue
+        pages.append(pix.tobytes("png"))
+    return pages
+
+
 def _claude_vision_ocr(raw_bytes: bytes) -> OCRResult:
-    """Use Claude Vision to transcribe handwritten French text."""
+    """Use Claude Vision to transcribe handwritten French text (image or PDF)."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not set.")
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    # Detect media type from magic bytes
-    if raw_bytes[:3] == b"\xff\xd8\xff":
-        media_type = "image/jpeg"
-    elif raw_bytes[:8] == b"\x89PNG\r\n\x1a\n":
-        media_type = "image/png"
+    if _is_pdf(raw_bytes):
+        # Send PDF as document — Claude API natively supports PDFs
+        b64 = base64.standard_b64encode(raw_bytes).decode("utf-8")
+        content = [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": b64,
+                },
+            },
+            {"type": "text", "text": "Transcribe the handwritten French dictation in this document."},
+        ]
     else:
-        media_type = "image/jpeg"
+        # Image: detect JPEG vs PNG
+        if raw_bytes[:3] == b"\xff\xd8\xff":
+            media_type = "image/jpeg"
+        elif raw_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+            media_type = "image/png"
+        else:
+            media_type = "image/jpeg"
 
-    b64 = base64.standard_b64encode(raw_bytes).decode("utf-8")
+        b64 = base64.standard_b64encode(raw_bytes).decode("utf-8")
+        content = [
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": b64},
+            },
+            {"type": "text", "text": "Transcribe this handwritten French dictation."},
+        ]
 
     message = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1024,
         system=_VISION_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": b64,
-                        },
-                    },
-                    {"type": "text", "text": "Transcribe this handwritten French dictation."},
-                ],
-            }
-        ],
+        messages=[{"role": "user", "content": content}],
     )
 
     text = message.content[0].text.strip()
@@ -134,20 +162,52 @@ def _tesseract_ocr(image: Image.Image) -> OCRResult:
     return OCRResult(text=text, confidence=avg_conf, warning=warning)
 
 
+def _tesseract_pdf_ocr(raw_bytes: bytes) -> OCRResult:
+    """Tesseract fallback for PDFs: render each page and OCR."""
+    page_images = _pdf_to_images(raw_bytes)
+    if not page_images:
+        return OCRResult(text="", confidence=0.0, warning="PDF appears to be blank.")
+
+    all_texts, all_confs = [], []
+    for png_bytes in page_images:
+        image = Image.open(io.BytesIO(png_bytes))
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGB")
+        image = _preprocess_image(image)
+        result = _tesseract_ocr(image)
+        if result.text:
+            all_texts.append(result.text)
+            all_confs.append(result.confidence)
+
+    combined_text = "\n".join(all_texts).strip()
+    avg_conf = (sum(all_confs) / len(all_confs)) if all_confs else 0.0
+
+    warning = ""
+    if avg_conf < 0.5:
+        warning = (
+            "Low OCR confidence on scanned PDF. "
+            "Please review the extracted text carefully."
+        )
+
+    return OCRResult(text=combined_text, confidence=avg_conf, warning=warning)
+
+
 def extract_text_from_image(file) -> OCRResult:
     """
-    Extract French text from an uploaded image file.
+    Extract French text from an uploaded image or PDF file.
 
     Tries Claude Vision first (accurate on handwriting).
     Falls back to Tesseract if the API key is unavailable.
+    Supports JPEG, PNG, and scanned PDF files.
 
     Args:
-        file: Streamlit UploadedFile (jpg/jpeg/png) or file-like object
+        file: Streamlit UploadedFile or file-like object (jpg/jpeg/png/pdf)
 
     Returns:
         OCRResult with extracted text, confidence estimate, and optional warning.
     """
     raw_bytes = file.read() if hasattr(file, "read") else file
+    is_pdf = _is_pdf(raw_bytes)
 
     vision_warning = ""
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -156,19 +216,20 @@ def extract_text_from_image(file) -> OCRResult:
         except anthropic.BadRequestError as e:
             if "credit balance" in str(e):
                 vision_warning = "Claude Vision unavailable (no API credits). Using Tesseract — review text carefully."
-            # other bad request errors fall through silently
         except Exception:
-            pass  # network/other errors — fall through to Tesseract
+            pass
 
     # Tesseract fallback
-    image = Image.open(io.BytesIO(raw_bytes))
-    image = ImageOps.exif_transpose(image)
-    if image.mode in ("RGBA", "P"):
-        image = image.convert("RGB")
-    image = _preprocess_image(image)
-    result = _tesseract_ocr(image)
-    if vision_warning and not result.warning:
-        result.warning = vision_warning
-    elif vision_warning:
-        result.warning = f"{vision_warning} {result.warning}"
+    if is_pdf:
+        result = _tesseract_pdf_ocr(raw_bytes)
+    else:
+        image = Image.open(io.BytesIO(raw_bytes))
+        image = ImageOps.exif_transpose(image)
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGB")
+        image = _preprocess_image(image)
+        result = _tesseract_ocr(image)
+
+    if vision_warning:
+        result.warning = f"{vision_warning} {result.warning}".strip()
     return result

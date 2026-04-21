@@ -4,6 +4,7 @@ streamlit==1.44.1
 # OCR
 pytesseract==0.3.13
 Pillow==11.2.1
+pymupdf==1.27.2.2
 
 # AI
 anthropic==0.52.0
