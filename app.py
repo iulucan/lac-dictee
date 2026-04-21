@@ -124,13 +124,13 @@ if ocr_text.strip():
 
     if generate_clicked:
         with st.spinner("Claude is reconstructing the reference text…"):
-            st.session_state["generated_reference"] = reconstruct_reference(ocr_text)
+            st.session_state["correct_text_area"] = reconstruct_reference(ocr_text)
 
-reference_default = st.session_state.get("generated_reference", "")
+if "correct_text_area" not in st.session_state:
+    st.session_state["correct_text_area"] = ""
 
 correct_text = st.text_area(
     "Reference text (what the student should have written):",
-    value=reference_default,
     height=140,
     placeholder="Le chat mange une souris dans le jardin.",
     key="correct_text_area",
