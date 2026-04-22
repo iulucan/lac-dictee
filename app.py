@@ -9,7 +9,7 @@ from src.ocr import extract_text_from_image
 from src.correction import correct_dictation, reconstruct_reference
 from src.pdf_export import generate_pdf
 from src.storage import save_correction, list_corrections
-from src.annotation import generate_annotated_html, generate_annotated_image
+from src.annotation import generate_annotated_html, generate_annotated_image, overlay_annotations_on_image
 
 load_dotenv()
 
@@ -186,7 +186,7 @@ if st.button("✅ Correct dictation", disabled=run_disabled, use_container_width
 
         # ── Annotated views ───────────────────────────────────────────────────
         st.subheader("Annotated correction")
-        tab_text, tab_image = st.tabs(["📝 Annotated text", "🖼️ Annotated image"])
+        tab_text, tab_image, tab_overlay = st.tabs(["📝 Annotated text", "🖼️ Annotated image", "✍️ Original + overlay"])
 
         with tab_text:
             st.caption("Wrong words struck through in red · correct form shown in green")
@@ -204,6 +204,26 @@ if st.button("✅ Correct dictation", disabled=run_disabled, use_container_width
                 mime="image/png",
                 use_container_width=True,
             )
+
+        with tab_overlay:
+            st.caption("Errors marked directly on the original handwritten image")
+            if uploaded_file is not None:
+                uploaded_file.seek(0)
+                raw = uploaded_file.read()
+                try:
+                    overlay_img = overlay_annotations_on_image(raw, ocr_text, correction)
+                    st.image(overlay_img, use_container_width=True)
+                    st.download_button(
+                        "⬇️ Download marked paper",
+                        data=overlay_img,
+                        file_name=f"lacdictee_marked_{student_name or 'student'}.png",
+                        mime="image/png",
+                        use_container_width=True,
+                    )
+                except Exception as e:
+                    st.warning(f"Could not generate overlay: {e}")
+            else:
+                st.info("Upload a photo or PDF to see the overlay on the original image.")
 
         # ── Error list ────────────────────────────────────────────────────────
         st.subheader("Errors")

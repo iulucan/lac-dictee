@@ -7,6 +7,7 @@ Level 2: Annotated image (Pillow rendered, teacher red-pen style)
 
 import io
 import re
+import pytesseract
 from PIL import Image, ImageDraw, ImageFont
 from src.correction import CorrectionResult
 
@@ -192,4 +193,138 @@ def generate_annotated_image(student_text: str, correction: CorrectionResult) ->
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", dpi=(150, 150))
+    return buf.getvalue()
+
+
+def overlay_annotations_on_image(
+    image_bytes: bytes,
+    student_text: str,
+    correction: CorrectionResult,
+) -> bytes:
+    """
+    Overlay error annotations directly on the original handwritten image.
+
+    Strategy:
+    1. Run Tesseract for word bounding boxes (positions only, not text)
+    2. Align Tesseract boxes with Infinity-Parser words by line + index
+    3. Draw red strikethrough + green correction on matched positions
+
+    Returns PNG bytes of the annotated original image.
+    """
+    import fitz
+
+    # ── Load image ───────────────────────────────────────────────────────────
+    if image_bytes[:4] == b"%PDF":
+        doc = fitz.open(stream=image_bytes, filetype="pdf")
+        # Find first non-blank page
+        page_img = None
+        for page in doc:
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+            if pix.samples.count(b"\xff") <= len(pix.samples) * 0.98:
+                page_img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+                break
+        if page_img is None:
+            raise ValueError("PDF appears blank.")
+        img = page_img
+    else:
+        from PIL import ImageOps
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img = ImageOps.exif_transpose(img)
+
+    # ── Get Tesseract word boxes ──────────────────────────────────────────────
+    tess_data = pytesseract.image_to_data(img, lang="fra", output_type=pytesseract.Output.DICT)
+
+    # Filter confident detections, group by line_num
+    line_boxes: dict[int, list[dict]] = {}
+    for i, word in enumerate(tess_data["text"]):
+        if not word.strip() or int(tess_data["conf"][i]) < 20:
+            continue
+        ln = tess_data["line_num"][i]
+        line_boxes.setdefault(ln, []).append({
+            "word": word,
+            "x": tess_data["left"][i],
+            "y": tess_data["top"][i],
+            "w": tess_data["width"][i],
+            "h": tess_data["height"][i],
+        })
+
+    # ── Align with Infinity-Parser text by line + index ───────────────────────
+    # Build flat list of (ocr_word, box) in reading order
+    sorted_lines = sorted(line_boxes.keys())
+    aligned: list[tuple[str, dict]] = []
+    for ln in sorted_lines:
+        boxes = sorted(line_boxes[ln], key=lambda b: b["x"])
+        for box in boxes:
+            aligned.append((box["word"], box))
+
+    # Infinity-Parser words in order
+    ip_words = [w for w in re.split(r"\s+", student_text.replace("\n", " ")) if w]
+
+    # Map: ip_word_index → box (by positional alignment)
+    word_to_box: dict[int, dict] = {}
+    for idx in range(min(len(ip_words), len(aligned))):
+        word_to_box[idx] = aligned[idx][1]
+
+    # ── Build error index: which word positions are errors ────────────────────
+    error_map = _build_error_map(correction.errors)
+    error_positions: list[tuple[dict, str, str, str]] = []  # (box, wrong, correct, etype)
+
+    used_positions = set()
+    for idx, word in enumerate(ip_words):
+        clean = re.sub(r"[^\w''-]", "", word).lower()
+        if clean in error_map and idx not in used_positions and idx in word_to_box:
+            correct, etype = error_map[clean]
+            error_positions.append((word_to_box[idx], word, correct, etype))
+            used_positions.add(idx)
+
+    # ── Draw on image ─────────────────────────────────────────────────────────
+    draw = ImageDraw.Draw(img)
+    scale = img.width / 595  # PDF points to pixels ratio
+
+    font_size = max(18, int(img.height * 0.022))
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
+    except Exception:
+        font = ImageFont.load_default()
+
+    for box, wrong, correct, etype in error_positions:
+        x, y, w, h = box["x"], box["y"], box["w"], box["h"]
+        color_hex = _ERROR_COLORS.get(etype, _DEFAULT_COLOR)
+        r, g, b = int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16)
+        color = (r, g, b)
+
+        # Red rectangle around wrong word
+        draw.rectangle([x, y, x + w, y + h], outline=color, width=2)
+
+        # Strikethrough
+        mid_y = y + h // 2
+        draw.line([(x, mid_y), (x + w, mid_y)], fill=color, width=2)
+
+        # Correct word in green above
+        draw.text((x, max(0, y - font_size - 4)), correct, font=font, fill=(39, 174, 96))
+
+    # ── Legend strip at bottom ────────────────────────────────────────────────
+    legend_h = 36
+    legend = Image.new("RGB", (img.width, legend_h), (245, 245, 245))
+    ld = ImageDraw.Draw(legend)
+    try:
+        lf = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 16)
+    except Exception:
+        lf = ImageFont.load_default()
+
+    lx = 12
+    for etype, color_hex in _ERROR_COLORS.items():
+        if any(e.type == etype for e in correction.errors):
+            r, g, b = int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16)
+            ld.rectangle([lx, 10, lx + 12, 24], fill=(r, g, b))
+            label = _LEGEND[etype]
+            ld.text((lx + 16, 8), label, font=lf, fill=(60, 60, 60))
+            lx += len(label) * 8 + 32
+
+    combined = Image.new("RGB", (img.width, img.height + legend_h), (255, 255, 255))
+    combined.paste(img, (0, 0))
+    combined.paste(legend, (0, img.height))
+
+    buf = io.BytesIO()
+    combined.save(buf, format="PNG", dpi=(150, 150))
     return buf.getvalue()
