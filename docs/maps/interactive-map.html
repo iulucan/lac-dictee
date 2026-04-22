@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LacDictée — Suisse Romande Market Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #1a1a2e; }
+  #map { width: 100%; height: 100%; }
+  #label {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.72); color: #fff; padding: 10px 22px;
+    border-radius: 24px; font-family: system-ui, sans-serif; font-size: 15px;
+    letter-spacing: 0.3px; pointer-events: none; transition: opacity 0.5s;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="label">🌍 World</div>
+<script>
+const map = L.map('map', {
+  zoomControl: false,
+  attributionControl: false,
+  dragging: false,
+  scrollWheelZoom: false,
+  doubleClickZoom: false,
+  keyboard: false,
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19,
+}).addTo(map);
+
+// Suisse Romande highlight polygon (approximate cantons: GE, VD, NE, FR, JU, VS-west, BE-Bern city area)
+const romandy = L.polygon([
+  [47.95, 5.95], [47.70, 6.15], [47.50, 6.40], [47.15, 6.80],
+  [46.95, 6.90], [46.85, 7.00], [46.50, 7.05], [46.10, 7.20],
+  [45.80, 6.80], [45.95, 6.35], [46.35, 6.10], [46.50, 6.00],
+  [46.70, 5.95], [46.95, 5.95], [47.20, 5.95], [47.50, 5.95],
+  [47.95, 5.95],
+], {
+  color: '#27ae60', weight: 2.5, fillColor: '#2ecc71', fillOpacity: 0.35,
+  dashArray: null,
+});
+
+const label = document.getElementById('label');
+
+const steps = [
+  { center: [20, 0],      zoom: 2,  delay: 2000, text: '🌍 World' },
+  { center: [48, 10],     zoom: 4,  delay: 2500, text: '🌍 Europe' },
+  { center: [46.8, 8.2],  zoom: 7,  delay: 2500, text: '🇨🇭 Switzerland' },
+  { center: [46.6, 6.8],  zoom: 9,  delay: 2500, text: '🟢 Suisse Romande — LacDictée primary market' },
+  { center: [46.6, 6.8],  zoom: 9,  delay: 3000, text: '🟢 ~18,600 French-speaking teachers · CHF 9/month Pro plan' },
+];
+
+async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function animate() {
+  map.setView(steps[0].center, steps[0].zoom, { animate: false });
+  await sleep(800);
+
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    label.style.opacity = '0';
+    await sleep(300);
+    label.textContent = s.text;
+    label.style.opacity = '1';
+
+    map.flyTo(s.center, s.zoom, { duration: 2.0, easeLinearity: 0.4 });
+    await sleep(s.delay);
+
+    if (i === 3) {
+      romandy.addTo(map);
+    }
+  }
+
+  await sleep(2000);
+  // Loop
+  romandy.remove();
+  animate();
+}
+
+map.setView([20, 0], 2, { animate: false });
+setTimeout(animate, 500);
+</script>
+</body>
+</html>
