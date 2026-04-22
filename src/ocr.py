@@ -250,11 +250,14 @@ def extract_text_from_image(file) -> OCRResult:
     # 2. Infinity-Parser-7B
     try:
         return _infinity_parser_ocr(raw_bytes)
-    except Exception:
-        pass
+    except Exception as _inf_err:
+        _inf_fail = str(_inf_err)
 
     # 3. Tesseract (last resort)
-    warning_prefix = "Falling back to Tesseract (low quality for handwriting). "
+    warning_prefix = (
+        "⚠️ Falling back to Tesseract (poor handwriting support). "
+        "Infinity-Parser may be starting up — try re-uploading in 30 s. "
+    )
     if is_pdf:
         result = _tesseract_pdf_ocr(raw_bytes)
     else:
