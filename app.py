@@ -9,6 +9,7 @@ from src.ocr import extract_text_from_image
 from src.correction import correct_dictation, reconstruct_reference
 from src.pdf_export import generate_pdf
 from src.storage import save_correction, list_corrections
+from src.annotation import generate_annotated_html, generate_annotated_image
 
 load_dotenv()
 
@@ -182,6 +183,27 @@ if st.button("✅ Correct dictation", disabled=run_disabled, use_container_width
         for i, (etype, count) in enumerate(by_type.items()):
             icon, label = type_labels.get(etype, ("⚫", etype))
             cols[i].metric(f"{icon} {label}", count)
+
+        # ── Annotated views ───────────────────────────────────────────────────
+        st.subheader("Annotated correction")
+        tab_text, tab_image = st.tabs(["📝 Annotated text", "🖼️ Annotated image"])
+
+        with tab_text:
+            st.caption("Wrong words struck through in red · correct form shown in green")
+            html = generate_annotated_html(ocr_text, correction)
+            st.markdown(html, unsafe_allow_html=True)
+
+        with tab_image:
+            st.caption("Teacher red-pen style — download to share with the student")
+            ann_img = generate_annotated_image(ocr_text, correction)
+            st.image(ann_img, use_container_width=True)
+            st.download_button(
+                "⬇️ Download annotated image",
+                data=ann_img,
+                file_name=f"lacdictee_annotated_{student_name or 'student'}.png",
+                mime="image/png",
+                use_container_width=True,
+            )
 
         # ── Error list ────────────────────────────────────────────────────────
         st.subheader("Errors")
