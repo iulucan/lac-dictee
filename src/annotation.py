@@ -286,6 +286,36 @@ def _get_word_boxes_opencv(img_pil: Image.Image) -> list[dict]:
     return [box for line in lines for box in line]
 
 
+def _cluster_boxes_into_lines(boxes: list[dict]) -> list[list[dict]]:
+    """
+    Group boxes into text lines by Y-centre proximity, sort each line left→right.
+    Filters out noise boxes whose height is well below the median word height.
+    """
+    if not boxes:
+        return []
+
+    # Height-based noise filter: keep boxes taller than 40% of median height
+    heights = sorted(b["h"] for b in boxes)
+    median_h = heights[len(heights) // 2]
+    boxes = [b for b in boxes if b["h"] >= median_h * 0.4]
+    if not boxes:
+        return []
+
+    line_gap = median_h * 1.2
+    boxes_by_y = sorted(boxes, key=lambda b: b["y"] + b["h"] / 2)
+
+    lines: list[list[dict]] = [[boxes_by_y[0]]]
+    for box in boxes_by_y[1:]:
+        cy = box["y"] + box["h"] / 2
+        last_cy = lines[-1][-1]["y"] + lines[-1][-1]["h"] / 2
+        if abs(cy - last_cy) <= line_gap:
+            lines[-1].append(box)
+        else:
+            lines.append([box])
+
+    return [sorted(line, key=lambda b: b["x"]) for line in lines]
+
+
 def overlay_annotations_on_image(
     image_bytes: bytes,
     student_text: str,
@@ -296,30 +326,42 @@ def overlay_annotations_on_image(
 
     Strategy:
     1. OpenCV contour detection → word bounding boxes (position only, no OCR)
-    2. Align boxes with Infinity-Parser words by reading order index
-    3. Draw red box + strikethrough on errors, green correction above
+    2. Cluster boxes into visual lines; align each line with the matching text line
+    3. Within each line, map boxes left→right to words left→right
+    4. Draw coloured box + strikethrough on errors, green correction above
 
     Returns PNG bytes of the annotated original image.
     """
     img = _load_image_from_bytes(image_bytes)
 
-    # ── OpenCV word boxes ─────────────────────────────────────────────────────
-    boxes = _get_word_boxes_opencv(img)
+    # ── OpenCV word boxes clustered into lines ────────────────────────────────
+    raw_boxes = _get_word_boxes_opencv(img)
+    visual_lines = _cluster_boxes_into_lines(raw_boxes)
 
-    # ── Align with student text words by index ────────────────────────────────
-    ip_words = [w for w in re.split(r"\s+", student_text.replace("\n", " ")) if w]
-    word_to_box = {idx: boxes[idx] for idx in range(min(len(ip_words), len(boxes)))}
+    # ── Split student text into lines; tokenise each line ─────────────────────
+    text_lines = [
+        [w for w in re.split(r"\s+", line) if w]
+        for line in student_text.splitlines()
+        if line.strip()
+    ]
 
-    # ── Map errors to word positions ──────────────────────────────────────────
+    # ── Build a flat word→box mapping aligned line-by-line ───────────────────
     error_map = _build_error_map(correction.errors)
     error_positions = []
-    used = set()
-    for idx, word in enumerate(ip_words):
-        clean = re.sub(r"[^\w''-]", "", word).lower()
-        if clean in error_map and idx not in used and idx in word_to_box:
-            correct, etype = error_map[clean]
-            error_positions.append((word_to_box[idx], correct, etype))
-            used.add(idx)
+    used_words: set[str] = set()   # track (line_idx, word_idx) already annotated
+
+    for li, (text_line, vis_line) in enumerate(
+        zip(text_lines, visual_lines)
+    ):
+        for wi, word in enumerate(text_line):
+            if wi >= len(vis_line):
+                break
+            clean = re.sub(r"[^\w''-]", "", word).lower()
+            key = f"{li}:{clean}"
+            if clean in error_map and key not in used_words:
+                correct, etype = error_map[clean]
+                error_positions.append((vis_line[wi], correct, etype))
+                used_words.add(key)
 
     # ── Draw annotations ──────────────────────────────────────────────────────
     draw = ImageDraw.Draw(img)
