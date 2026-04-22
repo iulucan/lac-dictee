@@ -36,17 +36,6 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
   maxZoom: 19,
 }).addTo(map);
 
-// Suisse Romande highlight polygon (approximate cantons: GE, VD, NE, FR, JU, VS-west, BE-Bern city area)
-const romandy = L.polygon([
-  [47.95, 5.95], [47.70, 6.15], [47.50, 6.40], [47.15, 6.80],
-  [46.95, 6.90], [46.85, 7.00], [46.50, 7.05], [46.10, 7.20],
-  [45.80, 6.80], [45.95, 6.35], [46.35, 6.10], [46.50, 6.00],
-  [46.70, 5.95], [46.95, 5.95], [47.20, 5.95], [47.50, 5.95],
-  [47.95, 5.95],
-], {
-  color: '#27ae60', weight: 2.5, fillColor: '#2ecc71', fillOpacity: 0.35,
-  dashArray: null,
-});
 
 const label = document.getElementById('label');
 
@@ -74,14 +63,9 @@ async function animate() {
     map.flyTo(s.center, s.zoom, { duration: 2.0, easeLinearity: 0.4 });
     await sleep(s.delay);
 
-    if (i === 3) {
-      romandy.addTo(map);
-    }
   }
 
   await sleep(2000);
-  // Loop
-  romandy.remove();
   animate();
 }
 
