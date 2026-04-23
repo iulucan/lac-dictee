@@ -33,12 +33,19 @@ env/
 .DS_Store
 Thumbs.db
 
-# Data / uploads (do not commit user photos)
+# Data / uploads (do not commit user photos or student submissions)
 data/uploads/
+data/corrections.db
 *.jpg
 *.jpeg
 *.png
+*.gif
 *.pdf
+!docs/**/*.jpg
+!docs/**/*.jpeg
+!docs/**/*.png
+!docs/**/*.gif
+!docs/**/*.pdf
 !data/samples/*.txt
 !data/testing/results/*.pdf
 
