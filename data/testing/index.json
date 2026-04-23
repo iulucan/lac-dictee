@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "id": "Data_001",
+    "student": "annn",
+    "date": "2026-04-22",
+    "input_photo": "Data_001.JPG",
+    "reference_text": "Data_001_dictee.txt",
+    "result_pdf": "results/lacdictee_annn_2026-04-22.pdf",
+    "score": 60,
+    "errors_found": 27,
+    "total_words": 25,
+    "notes": "Sample test — deliberate errors for demo"
+  }
+]

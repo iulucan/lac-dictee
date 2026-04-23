@@ -40,6 +40,7 @@ data/uploads/
 *.png
 *.pdf
 !data/samples/*.txt
+!data/testing/results/*.pdf
 
 # Test artifacts
 .pytest_cache/
