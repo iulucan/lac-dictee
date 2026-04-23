@@ -50,3 +50,6 @@ htmlcov/
 # Logs
 *.log
 logs/
+
+# Bootcamp-specific docs (stay local, not in public repo)
+docs/team/
