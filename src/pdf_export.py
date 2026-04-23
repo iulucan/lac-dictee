@@ -6,6 +6,20 @@ from datetime import date
 from fpdf import FPDF
 from src.correction import CorrectionResult
 
+
+def _sanitize(text: str) -> str:
+    """Replace Unicode characters outside Latin-1 (Helvetica range) with ASCII equivalents."""
+    return (
+        text
+        .replace("‘", "'").replace("’", "'")    # curly single quotes / apostrophe
+        .replace("“", '"').replace("”", '"')    # curly double quotes
+        .replace("–", "-").replace("—", "-")    # en dash / em dash
+        .replace("…", "...").replace("•", "*")  # ellipsis / bullet
+        .replace("œ", "oe").replace("Œ", "OE")  # œ / Œ  (French ligature)
+        .replace("æ", "ae").replace("Æ", "AE")  # æ / Æ
+    )
+
+
 _TYPE_LABELS = {
     "spelling":     "Spelling",
     "grammar":      "Grammar",
@@ -30,7 +44,7 @@ def generate_pdf(
     pdf.cell(0, 10, "LacDictee - Error Report", ln=True)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(120, 120, 120)
-    pdf.cell(0, 6, f"Student: {student_name or 'Unknown'}    Date: {date.today().isoformat()}", ln=True)
+    pdf.cell(0, 6, f"Student: {_sanitize(student_name or 'Unknown')}    Date: {date.today().isoformat()}", ln=True)
     pdf.ln(3)
     pdf.set_draw_color(200, 200, 200)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -41,7 +55,7 @@ def generate_pdf(
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 7, "Reference text", ln=True)
     pdf.set_font("Helvetica", "", 10)
-    pdf.multi_cell(0, 6, correct_text)
+    pdf.multi_cell(0, 6, _sanitize(correct_text))
     pdf.ln(3)
 
     # ── Score summary ─────────────────────────────────────────────────────────
@@ -72,10 +86,10 @@ def generate_pdf(
         for i, err in enumerate(correction.errors, 1):
             label = _TYPE_LABELS.get(err.type, err.type)
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 6, f"{i}. {err.wrong}  ->  {err.correct}  ({label})", ln=True)
+            pdf.cell(0, 6, f"{i}. {_sanitize(err.wrong)}  ->  {_sanitize(err.correct)}  ({label})", ln=True)
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(80, 80, 80)
-            pdf.multi_cell(0, 5, f"   {err.explanation}")
+            pdf.multi_cell(0, 5, f"   {_sanitize(err.explanation)}")
             pdf.set_text_color(0, 0, 0)
             pdf.ln(1)
     else:
