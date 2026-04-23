@@ -9,6 +9,30 @@
     "score": 60,
     "errors_found": 27,
     "total_words": 25,
-    "notes": "Sample test — deliberate errors for demo"
+    "notes": "Short sample dictation — synthetic errors for demo"
+  },
+  {
+    "id": "dictee_1",
+    "title": "Les Fêtes de fin d'année",
+    "level": "primary school",
+    "date": "2026-04-23",
+    "input_photo": "dictee_1/student_handwriting.jpg",
+    "reference_text": "dictee_1/reference.txt",
+    "teacher_corrections": "dictee_1/teacher_corrections.json",
+    "teacher_score": "4/6",
+    "teacher_error_count": "5-6",
+    "notes": "Real classroom sample. Page 2 (rewriting exercise) excluded from test."
+  },
+  {
+    "id": "dictee_2",
+    "title": "Carnaval et Pâques",
+    "level": "primary school",
+    "date": "2026-04-23",
+    "input_photo": "dictee_2/student_handwriting.jpg",
+    "reference_text": "dictee_2/reference.txt",
+    "teacher_corrections": "dictee_2/teacher_corrections.json",
+    "teacher_score": "6/6",
+    "teacher_error_count": "0-1",
+    "notes": "Near-perfect dictation. Good test for false positive rate."
   }
 ]

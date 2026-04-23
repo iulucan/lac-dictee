@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "title": "Les Fêtes de fin d'année",
+    "level": "primary school",
+    "source": "Sample_Dictee_1.jpg",
+    "teacher_score": "4/6",
+    "teacher_score_normalized": 67,
+    "error_count_teacher": "5-6",
+    "grading_scale": {
+      "6":   "0-1 errors",
+      "5.5": "1.5-2 errors",
+      "5":   "2.5-3 errors",
+      "4.5": "3.5-4.5 errors",
+      "4":   "5-6 errors",
+      "3.5": "6.5-7.5 errors",
+      "3":   "8-9 errors"
+    },
+    "notes": "Yellow highlight = mots appris (memorized words). Italic = words written on whiteboard."
+  },
+  "teacher_corrections": [
+    {
+      "sentence": 1,
+      "wrong": "approche",
+      "correct": "approchent",
+      "type": "grammar",
+      "weight": -1,
+      "note": "Subject-verb agreement: Les fêtes (pl.) → approchent"
+    },
+    {
+      "sentence": 1,
+      "wrong": "grand",
+      "correct": "grands",
+      "type": "grammar",
+      "weight": -1,
+      "note": "Adjective agreement: à grands pas"
+    },
+    {
+      "sentence": 2,
+      "wrong": "L'ans",
+      "correct": "L'an",
+      "type": "spelling",
+      "weight": -0.5,
+      "note": "Extra 's' — not a memorized word"
+    },
+    {
+      "sentence": 2,
+      "wrong": "décorer",
+      "correct": "décoré",
+      "type": "grammar",
+      "weight": -1,
+      "note": "Past participle: avions décoré (mots appris)"
+    },
+    {
+      "sentence": 4,
+      "wrong": "leur cadeau",
+      "correct": "leurs cadeaux",
+      "type": "grammar",
+      "weight": -1,
+      "note": "Plural agreement: ouvriront leurs cadeaux"
+    }
+  ],
+  "expected_lacdictee_output": {
+    "min_errors_to_find": 4,
+    "key_errors": ["approche→approchent", "décorer→décoré", "leurs cadeaux"],
+    "acceptable_false_positives": 2,
+    "pass_threshold": "find at least 3 of 5 teacher-marked errors"
+  }
+}

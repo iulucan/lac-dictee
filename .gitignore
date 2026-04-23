@@ -46,6 +46,9 @@ data/corrections.db
 !docs/**/*.png
 !docs/**/*.gif
 !docs/**/*.pdf
+!data/testing/**/*.jpg
+!data/testing/**/*.jpeg
+!data/testing/**/*.png
 !data/samples/*.txt
 !data/testing/results/*.pdf
 

@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "title": "Carnaval et Pâques",
+    "level": "primary school",
+    "source": "Sample_Dictee_3.jpg",
+    "teacher_score": "6/6",
+    "teacher_score_normalized": 100,
+    "error_count_teacher": "0-1",
+    "teacher_comment": "Bravo!",
+    "grading_scale": {
+      "6":   "0-1 errors",
+      "5.5": "1.5-2 errors",
+      "5":   "2.5-3 errors",
+      "4.5": "3.5-4.5 errors",
+      "4":   "5-6 errors"
+    },
+    "notes": "Near-perfect dictation. Only minor correction on sentence 4."
+  },
+  "teacher_corrections": [
+    {
+      "sentence": 4,
+      "wrong": "symbolisée",
+      "correct": "symbolisé",
+      "type": "grammar",
+      "weight": -0.5,
+      "note": "Past participle agreement: printemps (masc.) → symbolisé, not symbolisée"
+    }
+  ],
+  "expected_lacdictee_output": {
+    "min_errors_to_find": 1,
+    "key_errors": ["symbolisée→symbolisé"],
+    "acceptable_false_positives": 1,
+    "pass_threshold": "find the 1 teacher-marked error and report near-perfect score (>90)"
+  }
+}
