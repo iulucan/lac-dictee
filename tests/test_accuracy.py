@@ -48,6 +48,10 @@ def _report(case_id: str, teacher_data: dict, correction) -> dict:
 
     recall = len(matched) / len(teacher_errors) if teacher_errors else 1.0
 
+    min_score = expected.get("min_score", 0)
+    errors_ok = len(matched) >= expected["min_errors_to_find"]
+    score_ok  = correction.score >= min_score
+
     return {
         "case_id":                   case_id,
         "teacher_errors":            len(teacher_errors),
@@ -60,7 +64,8 @@ def _report(case_id: str, teacher_data: dict, correction) -> dict:
         "score_delta":               abs(correction.score - teacher_data["meta"]["teacher_score_normalized"]),
         "pass_threshold":            expected["pass_threshold"],
         "min_errors_required":       expected["min_errors_to_find"],
-        "passed":                    len(matched) >= expected["min_errors_to_find"],
+        "min_score_required":        min_score,
+        "passed":                    errors_ok and score_ok,
     }
 
 
@@ -68,7 +73,8 @@ def _print_report(r: dict) -> None:
     print(f"\n{'─' * 60}")
     print(f"  Test case : {r['case_id']}")
     print(f"  Recall    : {r['matched']}/{r['teacher_errors']} teacher errors found  ({r['recall']*100:.0f}%)")
-    print(f"  Score     : LacDictée {r['lacdictee_score']}/100  vs  teacher {r['teacher_score_normalized']}/100  (Δ {r['score_delta']})")
+    score_gate = f"  (min {r['min_score_required']})" if r["min_score_required"] else ""
+    print(f"  Score     : LacDictée {r['lacdictee_score']}/100  vs  teacher {r['teacher_score_normalized']}/100  (Δ {r['score_delta']}){score_gate}")
     print(f"  Errors    : LacDictée found {r['lacdictee_errors']} total")
     if r["missed_errors"]:
         print(f"  Missed    : {', '.join(r['missed_errors'])}")
@@ -120,6 +126,8 @@ def test_accuracy(case):
     assert report["passed"], (
         f"Accuracy too low for {case['id']}: "
         f"found {report['matched']}/{report['teacher_errors']} teacher errors "
-        f"(need {report['min_errors_required']}). "
+        f"(need {report['min_errors_required']}), "
+        f"score {report['lacdictee_score']}/100 "
+        f"(need >={report['min_score_required']}). "
         f"Missed: {report['missed_errors']}"
     )

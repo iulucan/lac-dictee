@@ -41,22 +41,41 @@ Rules:
 - Output ONLY the student's original text, nothing else\
 """
 
-_ANNOTATION_CHARS = {"✓", "✗", "✔", "✘", "×"}
+import unicodedata as _unicodedata
 
 _HF_SPACE = "infly/infinity-parser"
 _HF_MODEL = "Infinity-Parser-7B"
 
 
+def _is_annotation_char(c: str) -> bool:
+    """True if a character looks like a teacher mark (checkmark, cross, ballot)."""
+    cp = ord(c)
+    if cp in (0xFE0F, 0xFE0E):        # variation selectors
+        return True
+    if 0x2700 <= cp <= 0x27BF:        # Dingbats block (covers ✓✔✗✘ and many more)
+        return True
+    if cp in (0x2705, 0x274C, 0x274E, 0x2612, 0x2611, 0x2610, 0x00D7, 0x00F7):
+        return True
+    try:
+        name = _unicodedata.name(c, "")
+        return any(kw in name for kw in ("CHECK", "BALLOT", "CROSS MARK"))
+    except Exception:
+        return False
+
+
 def _strip_teacher_annotations(text: str) -> str:
-    """Remove teacher checkmarks and annotation lines from OCR output."""
+    """Remove teacher checkmarks and annotation-only lines from OCR output."""
     cleaned = []
     for line in text.splitlines():
         stripped = line.strip()
-        # Drop lines whose first non-space character is a teacher mark
-        if stripped and stripped[0] in _ANNOTATION_CHARS:
+        if not stripped:
+            cleaned.append(line)
             continue
-        # Strip inline annotation characters mid-line
-        cleaned_line = "".join(c for c in line if c not in _ANNOTATION_CHARS)
+        # Drop lines made entirely of annotation marks (e.g. "✓", "✓ et originaux")
+        if _is_annotation_char(stripped[0]):
+            continue
+        # Strip inline annotation characters from otherwise normal lines
+        cleaned_line = "".join(c for c in line if not _is_annotation_char(c))
         cleaned.append(cleaned_line)
     return "\n".join(cleaned).strip()
 
