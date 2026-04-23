@@ -5,11 +5,44 @@ Run: streamlit run app.py
 
 import streamlit as st
 from dotenv import load_dotenv
+import fitz  # PyMuPDF
 from src.ocr import extract_text_from_image
 from src.correction import correct_dictation, reconstruct_reference
 from src.pdf_export import generate_pdf
 from src.storage import save_correction, list_corrections
 from src.annotation import generate_annotated_html, generate_annotated_image, overlay_annotations_on_image
+
+
+def _extract_reference_text(file) -> tuple[str, str]:
+    """Extract plain text from a typed PDF or TXT reference file.
+    Returns (text, source) where source is 'text', 'ocr', or 'txt'.
+    """
+    import pytesseract
+    from PIL import Image
+    import io
+
+    if file.type == "text/plain":
+        return file.read().decode("utf-8", errors="replace").strip(), "txt"
+
+    raw = file.read()
+    doc = fitz.open(stream=raw, filetype="pdf")
+
+    # Try direct text extraction first (works for digital/typed PDFs)
+    pages_text = [page.get_text() for page in doc]
+    combined = "\n".join(pages_text).strip()
+    if combined:
+        doc.close()
+        return combined, "text"
+
+    # Fallback: render each page as image and OCR (for scanned PDFs)
+    ocr_pages = []
+    for page in doc:
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = page.get_pixmap(matrix=mat)
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        ocr_pages.append(pytesseract.image_to_string(img, lang="fra"))
+    doc.close()
+    return "\n".join(ocr_pages).strip(), "ocr"
 
 load_dotenv()
 
@@ -115,6 +148,26 @@ st.divider()
 
 # ── Step 2: Reference text ────────────────────────────────────────────────────
 st.subheader("Step 2 — Enter the correct dictation text")
+
+ref_upload = st.file_uploader(
+    "Upload reference text (PDF or TXT) — optional",
+    type=["pdf", "txt"],
+    help="Upload the original dictation text as a PDF or plain text file to auto-fill the field below.",
+    key="ref_upload",
+)
+
+if ref_upload:
+    with st.spinner("Extracting reference text…"):
+        extracted, source = _extract_reference_text(ref_upload)
+    if extracted:
+        st.session_state["correct_text_area"] = extracted
+        if source == "ocr":
+            st.warning(
+                f"⚠️ Scanned PDF detected — OCR used ({len(extracted.split())} words). "
+                "Review the text below before running correction.",
+            )
+        else:
+            st.success(f"✅ Reference text extracted — {len(extracted.split())} words")
 
 if ocr_text.strip():
     col_btn, col_info = st.columns([1, 2])
