@@ -34,13 +34,31 @@ You are transcribing a student's handwritten French dictation from a photo or sc
 Rules:
 - Transcribe EXACTLY what the student wrote, including spelling mistakes and missing accents
 - Do not correct any errors — the teacher needs to see the student's actual mistakes
-- Ignore lined paper, margins, pencil marks not part of the text
+- IGNORE all teacher marks: checkmarks (✓), crosses (✗ ×), underlines, circles, grades, and red/green ink
+- IGNORE any text written by the teacher: margin notes, inline corrections, words added above/below student lines
+- IGNORE lined paper, pencil guidelines, and watermarks
 - If a word is illegible, write [?] in its place
-- Output ONLY the transcribed text, nothing else\
+- Output ONLY the student's original text, nothing else\
 """
+
+_ANNOTATION_CHARS = {"✓", "✗", "✔", "✘", "×"}
 
 _HF_SPACE = "infly/infinity-parser"
 _HF_MODEL = "Infinity-Parser-7B"
+
+
+def _strip_teacher_annotations(text: str) -> str:
+    """Remove teacher checkmarks and annotation lines from OCR output."""
+    cleaned = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        # Drop lines whose first non-space character is a teacher mark
+        if stripped and stripped[0] in _ANNOTATION_CHARS:
+            continue
+        # Strip inline annotation characters mid-line
+        cleaned_line = "".join(c for c in line if c not in _ANNOTATION_CHARS)
+        cleaned.append(cleaned_line)
+    return "\n".join(cleaned).strip()
 
 
 def _is_pdf(raw_bytes: bytes) -> bool:
@@ -102,7 +120,7 @@ def _claude_vision_ocr(raw_bytes: bytes) -> OCRResult:
         messages=[{"role": "user", "content": content}],
     )
 
-    text = message.content[0].text.strip()
+    text = _strip_teacher_annotations(message.content[0].text.strip())
     illegible_count = text.count("[?]")
     word_count = max(len(text.split()), 1)
     confidence = max(0.0, 1.0 - illegible_count / word_count)

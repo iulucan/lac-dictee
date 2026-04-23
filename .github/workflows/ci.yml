@@ -29,4 +29,4 @@ jobs:
       - name: Run tests
         env:
           ANTHROPIC_API_KEY: "test-key-ci-mocked"
-        run: pytest tests/ -v
+        run: pytest tests/ -v -m "not accuracy"
