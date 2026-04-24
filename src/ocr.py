@@ -275,14 +275,19 @@ def extract_text_from_image(file) -> OCRResult:
     is_pdf = _is_pdf(raw_bytes)
 
     # 1. Claude Vision
+    _claude_skip_reason = ""
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
             return _claude_vision_ocr(raw_bytes)
         except anthropic.BadRequestError as e:
-            if "credit balance" not in str(e):
-                pass  # unexpected error — fall through
-        except Exception:
-            pass
+            if "credit balance" in str(e):
+                _claude_skip_reason = "💳 Anthropic API credits exhausted — add credits at console.anthropic.com/billing."
+            else:
+                _claude_skip_reason = f"Claude Vision error: {e}"
+        except Exception as e:
+            _claude_skip_reason = f"Claude Vision unavailable: {e}"
+    else:
+        _claude_skip_reason = "ANTHROPIC_API_KEY not set."
 
     # 2. Infinity-Parser-7B
     try:
@@ -292,8 +297,8 @@ def extract_text_from_image(file) -> OCRResult:
 
     # 3. Tesseract (last resort)
     warning_prefix = (
-        "⚠️ Falling back to Tesseract (poor handwriting support). "
-        "Infinity-Parser may be starting up — try re-uploading in 30 s. "
+        f"⚠️ {_claude_skip_reason} "
+        "Falling back to Tesseract OCR (poor handwriting support). "
     )
     if is_pdf:
         result = _tesseract_pdf_ocr(raw_bytes)
