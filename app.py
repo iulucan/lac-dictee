@@ -156,13 +156,12 @@ with st.sidebar:
             st.session_state.pop("history_rec", None)
             st.rerun()
 
-# ── Page header ────────────────────────────────────────────────────────────────
-col_title, col_analytics = st.columns([3, 1])
-with col_title:
-    st.title("🇫🇷 LacDictée")
-    st.caption("AI-powered French dictation correction for teachers")
-with col_analytics:
+    st.divider()
     st.page_link("pages/analytics.py", label="📊 Class Analytics", use_container_width=True)
+
+# ── Page header ────────────────────────────────────────────────────────────────
+st.title("🇫🇷 LacDictée")
+st.caption("AI-powered French dictation correction for teachers")
 
 st.divider()
 

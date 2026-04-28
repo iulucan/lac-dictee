@@ -109,3 +109,13 @@ def get_correction(record_id: int) -> Optional[CorrectionRecord]:
             "SELECT * FROM corrections WHERE id = ?", (record_id,)
         ).fetchone()
     return CorrectionRecord(**dict(row)) if row else None
+
+
+def list_all_corrections() -> list[CorrectionRecord]:
+    """Return all corrections, oldest first (for timeline charts)."""
+    init_db()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM corrections ORDER BY id ASC"
+        ).fetchall()
+    return [CorrectionRecord(**dict(r)) for r in rows]
