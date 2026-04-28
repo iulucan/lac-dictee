@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo/Logo_LacDictee_transparent.png" width="200" alt="LacDictée Logo"/>
+  <img src="docs/logo/Logo_LacDictee_transparent.png" width="300" alt="LacDictée Logo"/>
 </p>
 
 <h1 align="center">LacDictée</h1>
