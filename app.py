@@ -12,11 +12,10 @@ from src.pdf_export import generate_pdf
 from src.storage import save_correction, list_corrections
 from src.annotation import generate_annotated_html, generate_annotated_image, overlay_annotations_on_image
 
+load_dotenv()
+
 
 def _extract_reference_text(file) -> tuple[str, str]:
-    """Extract plain text from a typed PDF or TXT reference file.
-    Returns (text, source) where source is 'text', 'ocr', or 'txt'.
-    """
     import pytesseract
     from PIL import Image
     import io
@@ -26,15 +25,12 @@ def _extract_reference_text(file) -> tuple[str, str]:
 
     raw = file.read()
     doc = fitz.open(stream=raw, filetype="pdf")
-
-    # Try direct text extraction first (works for digital/typed PDFs)
     pages_text = [page.get_text() for page in doc]
     combined = "\n".join(pages_text).strip()
     if combined:
         doc.close()
         return combined, "text"
 
-    # Fallback: render each page as image and OCR (for scanned PDFs)
     ocr_pages = []
     for page in doc:
         mat = fitz.Matrix(2.0, 2.0)
@@ -44,15 +40,88 @@ def _extract_reference_text(file) -> tuple[str, str]:
     doc.close()
     return "\n".join(ocr_pages).strip(), "ocr"
 
-load_dotenv()
 
-st.set_page_config(
-    page_title="LacDictée",
-    page_icon="🇫🇷",
-    layout="wide",
-)
+TYPE_LABELS = {
+    "spelling":     ("🔴", "Spelling"),
+    "grammar":      ("🟠", "Grammar"),
+    "accent":       ("🟡", "Accent"),
+    "missing_word": ("🔵", "Missing word"),
+    "extra_word":   ("⚪", "Extra word"),
+}
 
-# ── Sidebar — correction history ─────────────────────────────────────────────
+
+def _render_report(correction, student_name: str, correct_text: str,
+                   student_text: str = "", uploaded_file=None):
+    """Render a full correction report (used for both live and history view)."""
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Score", f"{correction.score} / 100")
+    col2.metric("Errors found", correction.error_count)
+    col3.metric("Total words", correction.total_words)
+
+    if correction.error_count == 0:
+        st.success("🎉 Perfect dictation! No errors found.")
+    else:
+        st.subheader("Error breakdown")
+        by_type = correction.errors_by_type
+        cols = st.columns(len(by_type) if by_type else 1)
+        for i, (etype, count) in enumerate(by_type.items()):
+            icon, label = TYPE_LABELS.get(etype, ("⚫", etype))
+            cols[i].metric(f"{icon} {label}", count)
+
+        st.subheader("Annotated correction")
+        tab_text, tab_image, tab_overlay = st.tabs(
+            ["📝 Annotated text", "🖼️ Annotated image", "✍️ Original + overlay"]
+        )
+        with tab_text:
+            st.caption("Wrong words struck through in red · correct form shown in green")
+            st.markdown(generate_annotated_html(student_text, correction), unsafe_allow_html=True)
+
+        with tab_image:
+            st.caption("Teacher red-pen style — download to share with the student")
+            ann_img = generate_annotated_image(student_text, correction)
+            st.image(ann_img, use_container_width=True)
+            st.download_button(
+                "⬇️ Download annotated image", data=ann_img,
+                file_name=f"lacdictee_annotated_{student_name or 'student'}.png",
+                mime="image/png", use_container_width=True, key="dl_ann_img",
+            )
+
+        with tab_overlay:
+            st.caption("Errors marked directly on the original handwritten image")
+            if uploaded_file is not None:
+                uploaded_file.seek(0)
+                raw = uploaded_file.read()
+                try:
+                    overlay_img = overlay_annotations_on_image(raw, student_text, correction)
+                    st.image(overlay_img, use_container_width=True)
+                    st.download_button(
+                        "⬇️ Download marked paper", data=overlay_img,
+                        file_name=f"lacdictee_marked_{student_name or 'student'}.png",
+                        mime="image/png", use_container_width=True, key="dl_overlay",
+                    )
+                except Exception as e:
+                    st.warning(f"Could not generate overlay: {e}")
+            else:
+                st.info("Upload a photo or PDF to see the overlay on the original image.")
+
+        st.subheader("Errors")
+        for err in correction.errors:
+            icon, label = TYPE_LABELS.get(err.type, ("⚫", err.type))
+            with st.expander(f"{icon} **{err.wrong}** → `{err.correct}` ({label})"):
+                st.write(err.explanation)
+
+    st.divider()
+    pdf_bytes = generate_pdf(correction, student_name, correct_text)
+    fname = f"lacdictee_{student_name or 'report'}_{__import__('datetime').date.today()}.pdf"
+    st.download_button(
+        "⬇️ Download PDF Report", data=pdf_bytes,
+        file_name=fname, mime="application/pdf", use_container_width=True,
+    )
+
+
+st.set_page_config(page_title="LacDictée", page_icon="🇫🇷", layout="wide")
+
+# ── Sidebar — correction history ──────────────────────────────────────────────
 with st.sidebar:
     st.title("📋 History")
     st.caption("Last 20 corrections")
@@ -62,38 +131,56 @@ with st.sidebar:
     else:
         for rec in records:
             label = rec.student_name or "Unknown"
-            date_short = rec.created_at[:10]
+            # Show full datetime with seconds
+            dt = rec.created_at[:19].replace("T", "  ")
             badge = "🟢" if rec.score >= 80 else "🟡" if rec.score >= 60 else "🔴"
+            is_active = st.session_state.get("history_id") == rec.id
             if st.button(
-                f"{badge} {label} — {rec.score}/100\n{date_short}",
+                f"{badge} {label} — {rec.score}/100\n{dt}",
                 key=f"rec_{rec.id}",
                 use_container_width=True,
+                type="primary" if is_active else "secondary",
             ):
-                st.session_state["sidebar_record"] = rec
+                st.session_state["history_id"] = rec.id
+                st.session_state["history_rec"] = rec
+                st.session_state["view_mode"] = "history"
+                st.rerun()
 
-    # ── Show selected record ──────────────────────────────────────────────────
-    if "sidebar_record" in st.session_state:
-        rec = st.session_state["sidebar_record"]
+    if st.session_state.get("view_mode") == "history":
         st.divider()
-        st.subheader(f"📄 {rec.student_name or 'Unknown'}")
-        st.caption(rec.created_at[:10])
-        st.metric("Score", f"{rec.score} / 100")
-        correction = rec.to_correction_result()
-        pdf_bytes = generate_pdf(correction, rec.student_name, rec.correct_text)
-        st.download_button(
-            "⬇️ Download PDF",
-            data=pdf_bytes,
-            file_name=f"lacdictee_{rec.student_name or 'report'}_{rec.created_at[:10]}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+        if st.button("✏️ New correction", use_container_width=True):
+            st.session_state["view_mode"] = "correct"
+            st.session_state.pop("history_id", None)
+            st.session_state.pop("history_rec", None)
+            st.rerun()
 
-# ── Main area ─────────────────────────────────────────────────────────────────
-st.title("🇫🇷 LacDictée")
-st.caption("AI-powered French dictation correction for teachers")
+# ── Page header ────────────────────────────────────────────────────────────────
+col_title, col_analytics = st.columns([3, 1])
+with col_title:
+    st.title("🇫🇷 LacDictée")
+    st.caption("AI-powered French dictation correction for teachers")
+with col_analytics:
+    st.page_link("pages/analytics.py", label="📊 Class Analytics", use_container_width=True)
+
 st.divider()
 
-# ── Student name ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# HISTORY VIEW — load stored record, no recomputation
+# ══════════════════════════════════════════════════════════════════════════════
+if st.session_state.get("view_mode") == "history":
+    rec = st.session_state.get("history_rec")
+    if rec:
+        st.subheader(f"📄 {rec.student_name or 'Unknown'}  ·  {rec.created_at[:19].replace('T', '  ')}")
+        st.caption("Loaded from history — no recomputation")
+        correction = rec.to_correction_result()
+        _render_report(correction, rec.student_name, rec.correct_text, rec.student_text)
+    st.stop()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NORMAL CORRECTION WORKFLOW
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Student name ───────────────────────────────────────────────────────────────
 student_name = st.text_input(
     "Student name (optional)",
     placeholder="e.g. Marie Dupont",
@@ -102,7 +189,7 @@ student_name = st.text_input(
 
 st.divider()
 
-# ── Step 1: Upload ────────────────────────────────────────────────────────────
+# ── Step 1: Upload ─────────────────────────────────────────────────────────────
 st.subheader("Step 1 — Upload student's dictation photo")
 uploaded_file = st.file_uploader(
     "Upload a photo or scanned PDF of the student's handwritten dictation",
@@ -138,58 +225,53 @@ if uploaded_file:
     st.subheader("Extracted text (OCR)")
     st.caption("Review and correct any OCR mistakes before proceeding.")
     ocr_text = st.text_area(
-        "Student text:",
-        value=ocr_text,
-        height=140,
-        key="ocr_text_area",
+        "Student text:", value=ocr_text, height=140, key="ocr_text_area",
     )
 
 st.divider()
 
-# ── Step 2: Reference text ────────────────────────────────────────────────────
+# ── Step 2: Reference text ─────────────────────────────────────────────────────
 st.subheader("Step 2 — Enter the correct dictation text")
-
-ref_upload = st.file_uploader(
-    "Upload reference text (PDF or TXT) — optional",
-    type=["pdf", "txt"],
-    help="Upload the original dictation text as a PDF or plain text file to auto-fill the field below.",
-    key="ref_upload",
-)
-
-if ref_upload:
-    with st.spinner("Extracting reference text…"):
-        extracted, source = _extract_reference_text(ref_upload)
-    if extracted:
-        st.session_state["correct_text_area"] = extracted
-        if source == "ocr":
-            st.warning(
-                f"⚠️ Scanned PDF detected — OCR used ({len(extracted.split())} words). "
-                "Review the text below before running correction.",
-            )
-        else:
-            st.success(f"✅ Reference text extracted — {len(extracted.split())} words")
-
-if ocr_text.strip():
-    col_btn, col_info = st.columns([1, 2])
-    with col_btn:
-        generate_clicked = st.button(
-            "🔮 Generate reference text",
-            help="Ask Claude to reconstruct the likely correct text from the OCR output.",
-            use_container_width=True,
-        )
-    with col_info:
-        st.warning(
-            "⚠️ **Lower accuracy mode** — without the original text, "
-            "Claude guesses the reference. Results may miss real errors.",
-            icon=None,
-        )
-
-    if generate_clicked:
-        with st.spinner("Claude is reconstructing the reference text…"):
-            st.session_state["correct_text_area"] = reconstruct_reference(ocr_text)
 
 if "correct_text_area" not in st.session_state:
     st.session_state["correct_text_area"] = ""
+
+tab_upload, tab_type = st.tabs(["📄 Upload PDF or TXT", "✏️ Type / paste"])
+
+with tab_upload:
+    ref_upload = st.file_uploader(
+        "Upload the original dictation text", type=["pdf", "txt"], key="ref_upload",
+    )
+    if ref_upload:
+        with st.spinner("Extracting text…"):
+            extracted, source = _extract_reference_text(ref_upload)
+        if extracted:
+            st.session_state["correct_text_area"] = extracted
+            if source == "ocr":
+                st.warning(
+                    f"⚠️ Scanned PDF — OCR used ({len(extracted.split())} words). "
+                    "Review in the 'Type / paste' tab before running."
+                )
+            else:
+                st.success(f"✅ {len(extracted.split())} words extracted — ready to correct")
+
+with tab_type:
+    if ocr_text.strip():
+        col_btn, col_info = st.columns([1, 2])
+        with col_btn:
+            generate_clicked = st.button(
+                "🔮 Generate reference text",
+                help="Ask Claude to reconstruct the likely correct text from the OCR output.",
+                use_container_width=True,
+            )
+        with col_info:
+            st.warning(
+                "⚠️ **Lower accuracy mode** — Claude guesses the reference. "
+                "Results may miss real errors."
+            )
+        if generate_clicked:
+            with st.spinner("Claude is reconstructing the reference text…"):
+                st.session_state["correct_text_area"] = reconstruct_reference(ocr_text)
 
 correct_text = st.text_area(
     "Reference text (what the student should have written):",
@@ -198,7 +280,7 @@ correct_text = st.text_area(
     key="correct_text_area",
 )
 
-# ── Step 3: Run correction ────────────────────────────────────────────────────
+# ── Step 3: Run correction ─────────────────────────────────────────────────────
 st.divider()
 run_disabled = not (ocr_text.strip() and correct_text.strip())
 if run_disabled and (uploaded_file or correct_text):
@@ -206,98 +288,10 @@ if run_disabled and (uploaded_file or correct_text):
 
 if st.button("✅ Correct dictation", disabled=run_disabled, use_container_width=True):
     with st.spinner("Claude is analysing errors…"):
-        correction = correct_dictation(
-            student_text=ocr_text,
-            correct_text=correct_text,
-        )
+        correction = correct_dictation(student_text=ocr_text, correct_text=correct_text)
 
-    # Save to SQLite
     save_correction(correction, student_name, correct_text, ocr_text)
 
     st.divider()
     st.subheader("Step 3 — Error Report")
-
-    # ── Score metrics ─────────────────────────────────────────────────────────
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Score", f"{correction.score} / 100")
-    col2.metric("Errors found", correction.error_count)
-    col3.metric("Total words", correction.total_words)
-
-    type_labels = {
-        "spelling":     ("🔴", "Spelling"),
-        "grammar":      ("🟠", "Grammar"),
-        "accent":       ("🟡", "Accent"),
-        "missing_word": ("🔵", "Missing word"),
-        "extra_word":   ("⚪", "Extra word"),
-    }
-
-    if correction.error_count == 0:
-        st.success("🎉 Perfect dictation! No errors found.")
-    else:
-        # ── Error type breakdown ──────────────────────────────────────────────
-        st.subheader("Error breakdown")
-        by_type = correction.errors_by_type
-        cols = st.columns(len(by_type) if by_type else 1)
-        for i, (etype, count) in enumerate(by_type.items()):
-            icon, label = type_labels.get(etype, ("⚫", etype))
-            cols[i].metric(f"{icon} {label}", count)
-
-        # ── Annotated views ───────────────────────────────────────────────────
-        st.subheader("Annotated correction")
-        tab_text, tab_image, tab_overlay = st.tabs(["📝 Annotated text", "🖼️ Annotated image", "✍️ Original + overlay"])
-
-        with tab_text:
-            st.caption("Wrong words struck through in red · correct form shown in green")
-            html = generate_annotated_html(ocr_text, correction)
-            st.markdown(html, unsafe_allow_html=True)
-
-        with tab_image:
-            st.caption("Teacher red-pen style — download to share with the student")
-            ann_img = generate_annotated_image(ocr_text, correction)
-            st.image(ann_img, use_container_width=True)
-            st.download_button(
-                "⬇️ Download annotated image",
-                data=ann_img,
-                file_name=f"lacdictee_annotated_{student_name or 'student'}.png",
-                mime="image/png",
-                use_container_width=True,
-            )
-
-        with tab_overlay:
-            st.caption("Errors marked directly on the original handwritten image")
-            if uploaded_file is not None:
-                uploaded_file.seek(0)
-                raw = uploaded_file.read()
-                try:
-                    overlay_img = overlay_annotations_on_image(raw, ocr_text, correction)
-                    st.image(overlay_img, use_container_width=True)
-                    st.download_button(
-                        "⬇️ Download marked paper",
-                        data=overlay_img,
-                        file_name=f"lacdictee_marked_{student_name or 'student'}.png",
-                        mime="image/png",
-                        use_container_width=True,
-                    )
-                except Exception as e:
-                    st.warning(f"Could not generate overlay: {e}")
-            else:
-                st.info("Upload a photo or PDF to see the overlay on the original image.")
-
-        # ── Error list ────────────────────────────────────────────────────────
-        st.subheader("Errors")
-        for err in correction.errors:
-            icon, label = type_labels.get(err.type, ("⚫", err.type))
-            with st.expander(f"{icon} **{err.wrong}** → `{err.correct}` ({label})"):
-                st.write(err.explanation)
-
-    # ── PDF download ──────────────────────────────────────────────────────────
-    st.divider()
-    pdf_bytes = generate_pdf(correction, student_name, correct_text)
-    fname = f"lacdictee_{student_name or 'report'}_{__import__('datetime').date.today()}.pdf"
-    st.download_button(
-        "⬇️ Download PDF Report",
-        data=pdf_bytes,
-        file_name=fname,
-        mime="application/pdf",
-        use_container_width=True,
-    )
+    _render_report(correction, student_name, correct_text, ocr_text, uploaded_file)

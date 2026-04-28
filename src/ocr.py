@@ -3,9 +3,10 @@ OCR module — extracts text from handwritten dictation images and scanned PDFs.
 
 Priority:
   1. Claude Vision (claude-haiku-4-5) — best for handwriting, fast
-  2. Infinity-Parser-7B via HuggingFace Space — free, excellent on scanned docs
-  3. Tesseract — last resort, poor on handwriting
-PDF support: PyMuPDF converts PDF pages to images for Tesseract path.
+  2. Groq Vision (llama-4-scout-17b) — free, uses existing GROQ_API_KEY
+  3. Infinity-Parser-7B via HuggingFace Space — free, excellent on scanned docs
+  4. Tesseract — last resort, poor on handwriting
+PDF support: PyMuPDF converts PDF pages to images for vision OCR paths.
 """
 
 import os
@@ -15,6 +16,7 @@ import tempfile
 from dataclasses import dataclass
 
 import anthropic
+from groq import Groq
 import fitz  # PyMuPDF
 import pytesseract
 from gradio_client import Client, handle_file
@@ -151,6 +153,57 @@ def _claude_vision_ocr(raw_bytes: bytes) -> OCRResult:
     return OCRResult(text=text, confidence=confidence, warning=warning)
 
 
+_GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+
+def _groq_vision_ocr(raw_bytes: bytes) -> OCRResult:
+    """Use Groq Vision (llama-4-scout) to transcribe handwritten French text."""
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set.")
+
+    # For PDFs: render first page as PNG
+    if _is_pdf(raw_bytes):
+        pages = _pdf_to_images(raw_bytes, dpi=200)
+        if not pages:
+            raise ValueError("PDF appears blank.")
+        image_bytes = pages[0]
+        media_type = "image/png"
+    else:
+        image = Image.open(io.BytesIO(raw_bytes))
+        image = ImageOps.exif_transpose(image)
+        if image.mode not in ("RGB", "L"):
+            image = image.convert("RGB")
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=92)
+        image_bytes = buf.getvalue()
+        media_type = "image/jpeg"
+
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+
+    client = Groq(api_key=api_key)
+    response = client.chat.completions.create(
+        model=_GROQ_VISION_MODEL,
+        max_tokens=1024,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _VISION_PROMPT + "\n\nTranscribe this handwritten French dictation."},
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
+                ],
+            }
+        ],
+    )
+
+    text = _strip_teacher_annotations(response.choices[0].message.content.strip())
+    illegible_count = text.count("[?]")
+    word_count = max(len(text.split()), 1)
+    confidence = max(0.0, 1.0 - illegible_count / word_count)
+    warning = f"{illegible_count} illegible word(s) marked as [?]. Review the extracted text." if illegible_count > 0 else ""
+    return OCRResult(text=text, confidence=confidence, warning=warning)
+
+
 def _infinity_parser_ocr(raw_bytes: bytes) -> OCRResult:
     """Use Infinity-Parser-7B via HuggingFace Space (free, no API key needed)."""
     suffix = ".pdf" if _is_pdf(raw_bytes) else ".png"
@@ -262,8 +315,9 @@ def extract_text_from_image(file) -> OCRResult:
 
     Tries engines in priority order:
       1. Claude Vision  — best quality, requires ANTHROPIC_API_KEY + credits
-      2. Infinity-Parser-7B (HF Space) — free, great on scanned docs/photos
-      3. Tesseract — last resort
+      2. Groq Vision (llama-4-scout) — free, uses existing GROQ_API_KEY
+      3. Infinity-Parser-7B (HF Space) — free, no key needed
+      4. Tesseract — last resort
 
     Args:
         file: Streamlit UploadedFile or file-like object (jpg/jpeg/png/pdf)
@@ -289,13 +343,20 @@ def extract_text_from_image(file) -> OCRResult:
     else:
         _claude_skip_reason = "ANTHROPIC_API_KEY not set."
 
-    # 2. Infinity-Parser-7B
+    # 2. Groq Vision (free, fast, uses existing key)
+    if os.environ.get("GROQ_API_KEY"):
+        try:
+            return _groq_vision_ocr(raw_bytes)
+        except Exception:
+            pass
+
+    # 3. Infinity-Parser-7B
     try:
         return _infinity_parser_ocr(raw_bytes)
-    except Exception as _inf_err:
-        _inf_fail = str(_inf_err)
+    except Exception:
+        pass
 
-    # 3. Tesseract (last resort)
+    # 4. Tesseract (last resort)
     warning_prefix = (
         f"⚠️ {_claude_skip_reason} "
         "Falling back to Tesseract OCR (poor handwriting support). "

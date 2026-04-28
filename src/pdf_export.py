@@ -17,6 +17,7 @@ def _sanitize(text: str) -> str:
         .replace("…", "...").replace("•", "*")  # ellipsis / bullet
         .replace("œ", "oe").replace("Œ", "OE")  # œ / Œ  (French ligature)
         .replace("æ", "ae").replace("Æ", "AE")  # æ / Æ
+        .replace("€", "EUR").replace("£", "GBP")  # currency symbols
     )
 
 
