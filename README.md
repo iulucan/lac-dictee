@@ -1,10 +1,8 @@
 <p align="center">
   <img src="docs/logo/Logo_LacDictee_transparent.png" width="300" alt="LacDictée Logo"/>
 </p>
-
 <h1 align="center">LacDictée</h1>
 <p align="center"><em>AI-powered French dictation correction for teachers</em></p>
-
 <p align="center">
   <a href="https://github.com/codibrahim/lac-dictee/actions/workflows/ci.yml">
     <img src="https://github.com/codibrahim/lac-dictee/actions/workflows/ci.yml/badge.svg" alt="CI"/>
@@ -15,7 +13,6 @@
     <img src="https://img.shields.io/badge/docs-wiki-8b5cf6.svg" alt="Wiki"/>
   </a>
 </p>
-
 ---
 
 ## The Problem
