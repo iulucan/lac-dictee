@@ -13,7 +13,6 @@
     <img src="https://img.shields.io/badge/docs-wiki-8b5cf6.svg" alt="Wiki"/>
   </a>
 </p>
----
 
 ## The Problem
 
