@@ -123,6 +123,8 @@ st.set_page_config(page_title="LacDictée", page_icon="🇫🇷", layout="wide")
 
 # ── Sidebar — correction history ──────────────────────────────────────────────
 with st.sidebar:
+    st.image("docs/logo/LacDicteeLogo.png", use_container_width=True)
+    st.divider()
     st.title("📋 History")
     st.caption("Last 20 corrections")
     records = list_corrections(limit=20)
