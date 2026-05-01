@@ -215,11 +215,6 @@ if uploaded_file:
 
     if result.warning:
         st.warning(result.warning)
-        if "Tesseract" in result.warning:
-            st.info(
-                "💡 **Tip:** The AI OCR engine (Infinity-Parser) may still be warming up. "
-                "Wait 30 seconds and re-upload the image for much better results."
-            )
     else:
         st.success(f"✅ OCR completed — confidence: {int(result.confidence * 100)}%")
 
