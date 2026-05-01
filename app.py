@@ -63,10 +63,11 @@ def _render_report(correction, student_name: str, correct_text: str,
     else:
         st.subheader("Error breakdown")
         by_type = correction.errors_by_type
-        cols = st.columns(len(by_type) if by_type else 1)
+        n_cols = min(len(by_type), 2) if by_type else 1
+        cols = st.columns(n_cols)
         for i, (etype, count) in enumerate(by_type.items()):
             icon, label = TYPE_LABELS.get(etype, ("⚫", etype))
-            cols[i].metric(f"{icon} {label}", count)
+            cols[i % n_cols].metric(f"{icon} {label}", count)
 
         st.subheader("Annotated correction")
         tab_text, tab_image, tab_overlay = st.tabs(
@@ -120,6 +121,28 @@ def _render_report(correction, student_name: str, correct_text: str,
 
 
 st.set_page_config(page_title="LacDictée", page_icon="🇫🇷", layout="wide")
+
+st.markdown("""
+<style>
+@media (max-width: 768px) {
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
+    .stButton > button {
+        min-height: 48px;
+        font-size: 16px !important;
+    }
+    .block-container {
+        padding: 1rem 1rem 2rem !important;
+    }
+    [data-testid="stFileUploader"] section {
+        min-height: 80px;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ── Sidebar — correction history ──────────────────────────────────────────────
 with st.sidebar:
@@ -193,20 +216,18 @@ st.divider()
 # ── Step 1: Upload ─────────────────────────────────────────────────────────────
 st.subheader("Step 1 — Upload student's dictation photo")
 uploaded_file = st.file_uploader(
-    "Upload a photo or scanned PDF of the student's handwritten dictation",
+    "Take a photo or upload a scanned PDF of the student's handwritten dictation",
     type=["jpg", "jpeg", "png", "pdf"],
-    help="Supports JPG, PNG photos and scanned PDF files.",
+    help="On mobile: tap to open camera. Supports JPG, PNG, and scanned PDF.",
 )
 
 ocr_text = ""
 
 if uploaded_file:
-    col_img, col_info = st.columns([2, 1])
-    with col_img:
-        if uploaded_file.type == "application/pdf":
-            st.info(f"PDF uploaded: {uploaded_file.name}")
-        else:
-            st.image(uploaded_file, caption="Uploaded dictation", use_container_width=True)
+    if uploaded_file.type == "application/pdf":
+        st.info(f"PDF uploaded: {uploaded_file.name}")
+    else:
+        st.image(uploaded_file, caption="Uploaded dictation", use_container_width=True)
 
     with st.spinner("Reading handwriting with OCR…"):
         uploaded_file.seek(0)
@@ -253,18 +274,15 @@ with tab_upload:
 
 with tab_type:
     if ocr_text.strip():
-        col_btn, col_info = st.columns([1, 2])
-        with col_btn:
-            generate_clicked = st.button(
-                "🔮 Generate reference text",
-                help="Ask Claude to reconstruct the likely correct text from the OCR output.",
-                use_container_width=True,
-            )
-        with col_info:
-            st.warning(
-                "⚠️ **Lower accuracy mode** — Claude guesses the reference. "
-                "Results may miss real errors."
-            )
+        st.warning(
+            "⚠️ **Lower accuracy mode** — AI guesses the reference. "
+            "Results may miss real errors."
+        )
+        generate_clicked = st.button(
+            "🔮 Generate reference text",
+            help="Ask AI to reconstruct the likely correct text from the OCR output.",
+            use_container_width=True,
+        )
         if generate_clicked:
             with st.spinner("Claude is reconstructing the reference text…"):
                 st.session_state["correct_text_area"] = reconstruct_reference(ocr_text)
