@@ -245,27 +245,38 @@ def correct_dictation(student_text: str, correct_text: str) -> CorrectionResult:
     Compare student's dictation against the correct reference.
 
     Priority: Claude → Groq → Ollama → Gemma (HF Space)
+    Each provider falls through on failure (rate limit, no credits, unavailable).
     """
+    errors = []
+
     # 1. Claude
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
             return _claude_correct(student_text, correct_text)
-        except anthropic.BadRequestError as e:
-            if "credit balance" not in str(e):
-                raise
-        except Exception:
-            raise
+        except Exception as e:
+            errors.append(f"Claude: {e}")
 
     # 2. Groq
     if os.environ.get("GROQ_API_KEY"):
-        return _groq_correct(student_text, correct_text)
+        try:
+            return _groq_correct(student_text, correct_text)
+        except Exception as e:
+            errors.append(f"Groq: {e}")
 
     # 3. Ollama (local)
     if _ollama_available():
-        return _ollama_correct(student_text, correct_text)
+        try:
+            return _ollama_correct(student_text, correct_text)
+        except Exception as e:
+            errors.append(f"Ollama: {e}")
 
     # 4. Gemma (HF Space — last resort)
-    return _gemma_correct(student_text, correct_text)
+    try:
+        return _gemma_correct(student_text, correct_text)
+    except Exception as e:
+        errors.append(f"Gemma: {e}")
+
+    raise RuntimeError("All correction providers failed:\n" + "\n".join(errors))
 
 
 def reconstruct_reference(ocr_text: str) -> str:
@@ -274,19 +285,29 @@ def reconstruct_reference(ocr_text: str) -> str:
 
     Priority: Claude → Groq → Ollama → Gemma (HF Space)
     """
+    errors = []
+
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
             return _claude_reconstruct(ocr_text)
-        except anthropic.BadRequestError as e:
-            if "credit balance" not in str(e):
-                raise
-        except Exception:
-            raise
+        except Exception as e:
+            errors.append(f"Claude: {e}")
 
     if os.environ.get("GROQ_API_KEY"):
-        return _groq_reconstruct(ocr_text)
+        try:
+            return _groq_reconstruct(ocr_text)
+        except Exception as e:
+            errors.append(f"Groq: {e}")
 
     if _ollama_available():
-        return _ollama_reconstruct(ocr_text)
+        try:
+            return _ollama_reconstruct(ocr_text)
+        except Exception as e:
+            errors.append(f"Ollama: {e}")
 
-    return _gemma_reconstruct(ocr_text)
+    try:
+        return _gemma_reconstruct(ocr_text)
+    except Exception as e:
+        errors.append(f"Gemma: {e}")
+
+    raise RuntimeError("All reconstruction providers failed:\n" + "\n".join(errors))

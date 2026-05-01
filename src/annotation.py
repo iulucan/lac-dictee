@@ -212,108 +212,79 @@ def _load_image_from_bytes(image_bytes: bytes) -> Image.Image:
     return ImageOps.exif_transpose(img)
 
 
-def _get_word_boxes_opencv(img_pil: Image.Image) -> list[dict]:
-    """
-    Detect word bounding boxes using OpenCV contour analysis.
-    Does NOT read text — only finds visual word regions.
-
-    Returns list of {x, y, w, h} dicts sorted in reading order.
-    """
-    img_np = np.array(img_pil)
-    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-
-    # Isolate the paper from the background using Otsu's auto-threshold.
-    # Works for phone photos (dark table behind paper) and flat scans alike.
-    img_area = img_pil.width * img_pil.height
-    _, bright = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    bg_cnts, _ = cv2.findContours(bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    paper_mask = np.zeros_like(gray)
-    largest = max(bg_cnts, key=cv2.contourArea) if bg_cnts else None
-    if largest is not None and cv2.contourArea(largest) > img_area * 0.25:
-        cv2.drawContours(paper_mask, [largest], -1, 255, -1)
-        # Erode inward: removes paper-edge contrast that looks like ink
-        margin_px = max(20, min(img_pil.width, img_pil.height) // 60)
-        paper_mask = cv2.erode(paper_mask, np.ones((margin_px, margin_px), np.uint8))
-    else:
-        paper_mask[:] = 255  # flat scan or no clear paper boundary — use full image
-
-    # Adaptive threshold isolates ink strokes on paper
-    thresh = cv2.adaptiveThreshold(
-        gray, 255,
+def _preprocess_for_tesseract(img_pil: Image.Image) -> Image.Image:
+    """Enhance contrast so Tesseract finds word regions more reliably."""
+    img_np = np.array(img_pil.convert("L"))
+    img_np = cv2.GaussianBlur(img_np, (3, 3), 0)
+    img_np = cv2.adaptiveThreshold(
+        img_np, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV, 31, 10
+        cv2.THRESH_BINARY, 31, 10,
     )
+    return Image.fromarray(img_np).convert("RGB")
 
-    # Remove isolated noise pixels (salt from paper texture)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
 
-    # Apply paper mask — background noise disappears
-    thresh = cv2.bitwise_and(thresh, thresh, mask=paper_mask)
+def _get_word_boxes_tesseract(img_pil: Image.Image) -> list[list[dict]]:
+    """
+    Use Tesseract to get word bounding boxes organised by line.
+    We use its layout detection only — not its (unreliable) handwriting text.
 
-    # Dilate horizontally to merge chars → words
-    kw = max(15, img_pil.width // 35)
-    kh = max(3, img_pil.height // 200)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kw, kh))
-    dilated = cv2.dilate(thresh, kernel, iterations=1)
+    Returns list of lines; each line is a list of {x, y, w, h} dicts
+    sorted left→right, lines sorted top→bottom.
+    Only lines with ≥2 boxes are kept to discard noise/single-char detections.
+    """
+    try:
+        data = pytesseract.image_to_data(
+            _preprocess_for_tesseract(img_pil),
+            lang="fra",
+            output_type=pytesseract.Output.DICT,
+            config="--psm 6 --oem 3",   # PSM 6: uniform block
+        )
+    except pytesseract.TesseractNotFoundError:
+        return []
 
-    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Minimum box size scaled to image: words should be at least img_width/120
+    min_w = max(20, img_pil.width // 120)
+    min_h = max(12, img_pil.height // 120)
 
-    boxes = []
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        # Filter: too small (noise) or too large (full-line/page artifact)
-        if w < 15 or h < 8 or w * h > img_area * 0.05 or w / h > 25:
+    lines: dict[tuple, list] = {}
+    for i in range(len(data["level"])):
+        if data["level"][i] != 5:   # word level only
             continue
-        boxes.append({"x": x, "y": y, "w": w, "h": h})
+        w, h = data["width"][i], data["height"][i]
+        if w < min_w or h < min_h:  # skip noise/punctuation regions
+            continue
+        key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+        lines.setdefault(key, []).append({
+            "x": data["left"][i],
+            "y": data["top"][i],
+            "w": w,
+            "h": h,
+            "text": data["text"][i].strip(),
+        })
 
-    # Cluster into lines by Y centre, then sort left→right within each line
-    if not boxes:
-        return []
+    sorted_lines = sorted(
+        lines.values(),
+        key=lambda boxes: min(b["y"] for b in boxes),
+    )
+    # Keep only lines that look like real text (≥2 word boxes)
+    candidate_lines = [
+        sorted(line, key=lambda b: b["x"])
+        for line in sorted_lines
+        if len(line) >= 2
+    ]
 
-    line_gap = max(b["h"] for b in boxes) * 0.8
-    boxes.sort(key=lambda b: b["y"])
+    # Secondary noise filter: within each line drop boxes much smaller
+    # than the median box area for that line (punctuation / ink specks)
+    cleaned: list[list[dict]] = []
+    for line in candidate_lines:
+        if not line:
+            continue
+        areas = sorted(b["w"] * b["h"] for b in line)
+        med = areas[len(areas) // 2]
+        cleaned.append([b for b in line if b["w"] * b["h"] >= med * 0.35])
 
-    lines: list[list[dict]] = []
-    current_line: list[dict] = [boxes[0]]
-    for box in boxes[1:]:
-        if abs(box["y"] - current_line[-1]["y"]) < line_gap:
-            current_line.append(box)
-        else:
-            lines.append(sorted(current_line, key=lambda b: b["x"]))
-            current_line = [box]
-    lines.append(sorted(current_line, key=lambda b: b["x"]))
-
-    return [box for line in lines for box in line]
-
-
-def _cluster_boxes_into_lines(boxes: list[dict]) -> list[list[dict]]:
-    """
-    Group boxes into text lines by Y-centre proximity, sort each line left→right.
-    Filters out noise boxes whose height is well below the median word height.
-    """
-    if not boxes:
-        return []
-
-    # Height-based noise filter: keep boxes taller than 40% of median height
-    heights = sorted(b["h"] for b in boxes)
-    median_h = heights[len(heights) // 2]
-    boxes = [b for b in boxes if b["h"] >= median_h * 0.4]
-    if not boxes:
-        return []
-
-    line_gap = median_h * 1.2
-    boxes_by_y = sorted(boxes, key=lambda b: b["y"] + b["h"] / 2)
-
-    lines: list[list[dict]] = [[boxes_by_y[0]]]
-    for box in boxes_by_y[1:]:
-        cy = box["y"] + box["h"] / 2
-        last_cy = lines[-1][-1]["y"] + lines[-1][-1]["h"] / 2
-        if abs(cy - last_cy) <= line_gap:
-            lines[-1].append(box)
-        else:
-            lines.append([box])
-
-    return [sorted(line, key=lambda b: b["x"]) for line in lines]
+    return [l for l in cleaned if l]
 
 
 def overlay_annotations_on_image(
@@ -325,43 +296,70 @@ def overlay_annotations_on_image(
     Overlay error annotations directly on the original handwritten image.
 
     Strategy:
-    1. OpenCV contour detection → word bounding boxes (position only, no OCR)
-    2. Cluster boxes into visual lines; align each line with the matching text line
-    3. Within each line, map boxes left→right to words left→right
+    1. Tesseract layout detection → word bounding boxes organised by line
+    2. Map each OCR text line to the proportionally closest visual line
+    3. Within each line, map error word positions left→right to box positions
     4. Draw coloured box + strikethrough on errors, green correction above
 
     Returns PNG bytes of the annotated original image.
     """
     img = _load_image_from_bytes(image_bytes)
 
-    # ── OpenCV word boxes clustered into lines ────────────────────────────────
-    raw_boxes = _get_word_boxes_opencv(img)
-    visual_lines = _cluster_boxes_into_lines(raw_boxes)
+    # ── Tesseract: word boxes organised into lines ────────────────────────────
+    visual_lines = _get_word_boxes_tesseract(img)
 
-    # ── Split student text into lines; tokenise each line ─────────────────────
+    # ── Split OCR text into lines, then words ─────────────────────────────────
     text_lines = [
         [w for w in re.split(r"\s+", line) if w]
         for line in student_text.splitlines()
         if line.strip()
     ]
 
-    # ── Build a flat word→box mapping aligned line-by-line ───────────────────
+    # ── Line-by-line proportional alignment ──────────────────────────────────
+    # Map text line ti → visual line vi (proportional), then word wj → box bj
+    # within that line.  This constrains drift to within a single line instead
+    # of accumulating across the whole text.
     error_map = _build_error_map(correction.errors)
     error_positions = []
-    used_words: set[str] = set()   # track (line_idx, word_idx) already annotated
+    used_words: set[str] = set()
+    used_boxes: set[tuple[int, int]] = set()   # (vi, bj) pairs
 
-    for li, (text_line, vis_line) in enumerate(
-        zip(text_lines, visual_lines)
-    ):
-        for wi, word in enumerate(text_line):
-            if wi >= len(vis_line):
-                break
-            clean = re.sub(r"[^\w''-]", "", word).lower()
-            key = f"{li}:{clean}"
-            if clean in error_map and key not in used_words:
+    n_vlines = len(visual_lines)
+    n_tlines = len(text_lines)
+
+    if n_tlines > 0 and n_vlines > 0:
+        for ti, tline in enumerate(text_lines):
+            vi = min(int(ti * n_vlines / n_tlines + 0.5), n_vlines - 1)
+            vline = visual_lines[vi]
+            n_tw = len(tline)
+            n_vw = len(vline)
+            if n_vw == 0:
+                continue
+
+            for wj, word in enumerate(tline):
+                clean = re.sub(r"[^\w''-]", "", word).lower()
+                if clean not in error_map or clean in used_words:
+                    continue
+
                 correct, etype = error_map[clean]
-                error_positions.append((vis_line[wi], correct, etype))
-                used_words.add(key)
+
+                # Proportional target box within this visual line
+                bj = min(int(wj * n_vw / n_tw + 0.5), n_vw - 1)
+
+                # Search outward from bj for the nearest free box
+                search_order = [bj]
+                for delta in range(1, n_vw):
+                    if bj + delta < n_vw:
+                        search_order.append(bj + delta)
+                    if bj - delta >= 0:
+                        search_order.append(bj - delta)
+
+                for cand in search_order:
+                    if (vi, cand) not in used_boxes:
+                        error_positions.append((vline[cand], correct, etype))
+                        used_words.add(clean)
+                        used_boxes.add((vi, cand))
+                        break
 
     # ── Draw annotations ──────────────────────────────────────────────────────
     draw = ImageDraw.Draw(img)

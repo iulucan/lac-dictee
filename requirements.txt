@@ -20,6 +20,7 @@ fpdf2==2.8.3
 
 # Environment
 python-dotenv==1.1.0
+toml>=0.10.0
 
 # Analytics
 plotly>=5.0.0

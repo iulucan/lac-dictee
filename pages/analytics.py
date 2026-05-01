@@ -35,9 +35,22 @@ def score_color(score: int) -> str:
     return "#e74c3c"
 
 
+def _normalize(text: str) -> str:
+    """Collapse whitespace for stable grouping regardless of copy-paste differences."""
+    import re
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
 def exercise_label(correct_text: str) -> str:
-    first = correct_text.strip().split("\n")[0]
-    return (first[:55] + "…") if len(first) > 55 else first
+    """Return a human-readable exercise name: title + first-sentence preview."""
+    lines = [l.strip() for l in correct_text.strip().splitlines() if l.strip()]
+    if not lines:
+        return "(empty)"
+    title = lines[0]
+    if len(lines) > 1:
+        preview = lines[1][:45]
+        return f"{title} — {preview}…" if len(lines[1]) > 45 else f"{title} — {preview}"
+    return (title[:70] + "…") if len(title) > 70 else title
 
 
 # ── Load data ─────────────────────────────────────────────────────────────────
@@ -49,11 +62,14 @@ if not all_records:
     st.warning("No corrections found yet. Run at least one correction first.")
     st.stop()
 
-# Group by exact correct_text → exercise
+# Group by normalized correct_text so whitespace differences don't split the same exercise
 exercise_map: dict[str, list] = {}
+_norm_to_label: dict[str, str] = {}
 for rec in all_records:
-    label = exercise_label(rec.correct_text)
-    exercise_map.setdefault(label, []).append(rec)
+    key = _normalize(rec.correct_text)
+    if key not in _norm_to_label:
+        _norm_to_label[key] = exercise_label(rec.correct_text)
+    exercise_map.setdefault(_norm_to_label[key], []).append(rec)
 
 all_student_names = sorted({r.student_name for r in all_records if r.student_name})
 
