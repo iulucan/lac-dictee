@@ -20,8 +20,8 @@ env/
 .venv/
 .venv
 
-# Streamlit
-.streamlit/
+# Streamlit — only secrets stay local
+.streamlit/secrets.toml
 
 # IDE
 .vscode/
