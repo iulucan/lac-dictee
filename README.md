@@ -5,17 +5,17 @@
 <p align="center"><em>AI-powered French dictation correction for teachers</em></p>
 <!-- maintained by iulucan -->
 <p align="center">
-  <a href="https://lac-dictee.streamlit.app">
-    <img src="https://img.shields.io/badge/🚀_Live_Demo-lac--dictee.streamlit.app-ff4b4b?style=for-the-badge" alt="Live Demo"/>
+  <a href="https://lacdictee.streamlit.app">
+    <img src="https://img.shields.io/badge/🚀_Live_Demo-lacdictee.streamlit.app-ff4b4b?style=for-the-badge" alt="Live Demo"/>
   </a>
 </p>
 <p align="center">
-  <a href="https://github.com/codibrahim/lac-dictee/actions/workflows/ci.yml">
-    <img src="https://github.com/codibrahim/lac-dictee/actions/workflows/ci.yml/badge.svg" alt="CI"/>
+  <a href="https://github.com/iulucan/lac-dictee/actions/workflows/ci.yml">
+    <img src="https://github.com/iulucan/lac-dictee/actions/workflows/ci.yml/badge.svg" alt="CI"/>
   </a>
   <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python"/>
   <img src="https://img.shields.io/badge/streamlit-1.44-red.svg" alt="Streamlit"/>
-  <a href="https://github.com/codibrahim/lac-dictee/wiki">
+  <a href="https://github.com/iulucan/lac-dictee/wiki">
     <img src="https://img.shields.io/badge/docs-wiki-8b5cf6.svg" alt="Wiki"/>
   </a>
 </p>
@@ -32,11 +32,11 @@ French dictation (*dictée*) is a core exercise in French language education. Te
 
 ### Web — no installation needed
 
-Open **[lac-dictee.streamlit.app](https://lac-dictee.streamlit.app)** in any browser.
+Open **[lacdictee.streamlit.app](https://lacdictee.streamlit.app)** in any browser.
 
 ### Mobile — works on any smartphone
 
-1. Open **[lac-dictee.streamlit.app](https://lac-dictee.streamlit.app)** on your phone
+1. Open **[lacdictee.streamlit.app](https://lacdictee.streamlit.app)** on your phone
 2. Tap the file uploader → your camera opens directly
 3. Photograph the student's handwritten dictation
 4. Get an instant correction report
@@ -76,7 +76,7 @@ Teacher photographs student's handwriting (phone or scanner)
 | Layer | Technology | Notes |
 |-------|-----------|-------|
 | UI | Streamlit 1.44 | Multi-page, mobile-responsive |
-| Deployment | Streamlit Community Cloud | Live at lac-dictee.streamlit.app |
+| Deployment | Streamlit Community Cloud | Live at lacdictee.streamlit.app |
 | OCR primary | Claude Vision (haiku-4-5) | Best for handwriting |
 | OCR fallback 1 | Groq Vision (llama-4-scout-17b) | Free, fast |
 | OCR fallback 2 | Tesseract | Offline, last resort |
@@ -93,7 +93,7 @@ Teacher photographs student's handwriting (phone or scanner)
 
 ```bash
 # 1. Clone
-git clone https://github.com/codibrahim/lac-dictee.git
+git clone https://github.com/iulucan/lac-dictee.git
 cd lac-dictee
 
 # 2. Create virtualenv & install
@@ -153,7 +153,7 @@ lac-dictee/
 
 Full project documentation — sprints, architecture, business model, demo guide:
 
-**[→ github.com/codibrahim/lac-dictee/wiki](https://github.com/codibrahim/lac-dictee/wiki)**
+**[→ github.com/iulucan/lac-dictee/wiki](https://github.com/iulucan/lac-dictee/wiki)**
 
 ---
 
