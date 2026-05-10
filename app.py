@@ -156,12 +156,13 @@ with st.sidebar:
     else:
         for rec in records:
             label = rec.student_name or "Unknown"
+            ex = f" · {rec.exercise_name}" if rec.exercise_name else ""
             # Show full datetime with seconds
             dt = rec.created_at[:19].replace("T", "  ")
             badge = "🟢" if rec.score >= 80 else "🟡" if rec.score >= 60 else "🔴"
             is_active = st.session_state.get("history_id") == rec.id
             if st.button(
-                f"{badge} {label} — {rec.score}/100\n{dt}",
+                f"{badge} {label}{ex} — {rec.score}/100\n{dt}",
                 key=f"rec_{rec.id}",
                 use_container_width=True,
                 type="primary" if is_active else "secondary",
@@ -204,12 +205,20 @@ if st.session_state.get("view_mode") == "history":
 # NORMAL CORRECTION WORKFLOW
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Student name ───────────────────────────────────────────────────────────────
-student_name = st.text_input(
-    "Student name (optional)",
-    placeholder="e.g. Marie Dupont",
-    key="student_name",
-)
+# ── Student name + Exercise name ───────────────────────────────────────────────
+col_name, col_ex = st.columns(2)
+with col_name:
+    student_name = st.text_input(
+        "Student name (optional)",
+        placeholder="e.g. Marie Dupont",
+        key="student_name",
+    )
+with col_ex:
+    exercise_name = st.text_input(
+        "Exercise name (optional)",
+        placeholder="e.g. Les Champignons",
+        key="exercise_name",
+    )
 
 st.divider()
 
@@ -304,7 +313,7 @@ if st.button("✅ Correct dictation", disabled=run_disabled, use_container_width
     with st.spinner("Claude is analysing errors…"):
         correction = correct_dictation(student_text=ocr_text, correct_text=correct_text)
 
-    save_correction(correction, student_name, correct_text, ocr_text)
+    save_correction(correction, student_name, correct_text, ocr_text, exercise_name)
 
     st.divider()
     st.subheader("Step 3 — Error Report")
