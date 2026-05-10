@@ -18,6 +18,7 @@ DB_PATH = Path(__file__).parent.parent / "data" / "corrections.db"
 class CorrectionRecord:
     id: int
     student_name: str
+    exercise_name: str
     correct_text: str
     student_text: str
     score: int
@@ -48,17 +49,22 @@ def init_db() -> None:
     with _connect() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS corrections (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_name TEXT    NOT NULL DEFAULT '',
-                correct_text TEXT    NOT NULL,
-                student_text TEXT    NOT NULL,
-                score        INTEGER NOT NULL,
-                error_count  INTEGER NOT NULL,
-                total_words  INTEGER NOT NULL,
-                errors_json  TEXT    NOT NULL,
-                created_at   TEXT    NOT NULL
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_name  TEXT    NOT NULL DEFAULT '',
+                exercise_name TEXT    NOT NULL DEFAULT '',
+                correct_text  TEXT    NOT NULL,
+                student_text  TEXT    NOT NULL,
+                score         INTEGER NOT NULL,
+                error_count   INTEGER NOT NULL,
+                total_words   INTEGER NOT NULL,
+                errors_json   TEXT    NOT NULL,
+                created_at    TEXT    NOT NULL
             )
         """)
+        # Migrate existing DBs that don't have exercise_name yet
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(corrections)").fetchall()]
+        if "exercise_name" not in cols:
+            conn.execute("ALTER TABLE corrections ADD COLUMN exercise_name TEXT NOT NULL DEFAULT ''")
 
 
 def save_correction(
@@ -66,6 +72,7 @@ def save_correction(
     student_name: str,
     correct_text: str,
     student_text: str,
+    exercise_name: str = "",
 ) -> int:
     """Save a correction to the database. Returns the new row id."""
     init_db()
@@ -76,10 +83,11 @@ def save_correction(
     with _connect() as conn:
         cursor = conn.execute(
             """INSERT INTO corrections
-               (student_name, correct_text, student_text, score, error_count, total_words, errors_json, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (student_name, exercise_name, correct_text, student_text, score, error_count, total_words, errors_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 student_name or "",
+                exercise_name or "",
                 correct_text,
                 student_text,
                 correction.score,

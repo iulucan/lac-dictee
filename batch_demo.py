@@ -26,19 +26,15 @@ REPORT_DIR = Path("reports/demo")
 CHAMP_REF = (CHAMP_DIR / "champignons_reference.txt").read_text(encoding="utf-8").strip()
 RENA_REF  = (RENA_DIR  / "renaissance_reference.txt").read_text(encoding="utf-8").strip()
 
-# Prepend exercise label as first line → analytics groups by this
-CHAMP_TEXT = "DemoExercise_A1\n" + CHAMP_REF
-RENA_TEXT  = "DemoExercise_A2\n" + RENA_REF
-
 EXERCISES = [
     {
-        "label": "DemoExercise_A1 (Champignons)",
-        "correct_text": CHAMP_TEXT,
+        "label": "DemoExercise_A1",
+        "correct_text": CHAMP_REF,
         "jpgs": sorted(CHAMP_DIR.glob("IMG_*.JPG")),
     },
     {
-        "label": "DemoExercise_A2 (Renaissance)",
-        "correct_text": RENA_TEXT,
+        "label": "DemoExercise_A2",
+        "correct_text": RENA_REF,
         "jpgs": sorted(RENA_DIR.glob("IMG_*.JPG")),
     },
 ]
@@ -61,7 +57,7 @@ def process_student(jpg: Path, correct_text: str, student_name: str, ex_label: s
     print(f"score {correction.score}/100  errors {correction.error_count}")
 
     # Save to SQLite
-    save_correction(correction, student_name, correct_text, ocr.text)
+    save_correction(correction, student_name, correct_text, ocr.text, ex_label)
 
     # PDF
     try:

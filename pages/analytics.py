@@ -62,14 +62,18 @@ if not all_records:
     st.warning("No corrections found yet. Run at least one correction first.")
     st.stop()
 
-# Group by normalized correct_text so whitespace differences don't split the same exercise
+# Group by exercise_name if set; fall back to normalized correct_text
 exercise_map: dict[str, list] = {}
 _norm_to_label: dict[str, str] = {}
 for rec in all_records:
-    key = _normalize(rec.correct_text)
-    if key not in _norm_to_label:
-        _norm_to_label[key] = exercise_label(rec.correct_text)
-    exercise_map.setdefault(_norm_to_label[key], []).append(rec)
+    if rec.exercise_name:
+        label = rec.exercise_name
+    else:
+        key = _normalize(rec.correct_text)
+        if key not in _norm_to_label:
+            _norm_to_label[key] = exercise_label(rec.correct_text)
+        label = _norm_to_label[_normalize(rec.correct_text)]
+    exercise_map.setdefault(label, []).append(rec)
 
 all_student_names = sorted({r.student_name for r in all_records if r.student_name})
 
@@ -269,7 +273,7 @@ with tab_student:
     st.divider()
 
     dates = [r.created_at[:10] for r in student_records]
-    ex_labels = [exercise_label(r.correct_text) for r in student_records]
+    ex_labels = [r.exercise_name or exercise_label(r.correct_text) for r in student_records]
     x_axis = list(range(1, len(scores) + 1))
 
     left_s, right_s = st.columns(2)
@@ -325,7 +329,7 @@ with tab_student:
         {
             "#": i,
             "Date": r.created_at[:10],
-            "Exercise": exercise_label(r.correct_text),
+            "Exercise": r.exercise_name or exercise_label(r.correct_text),
             "Score": f"{r.score}/100",
             "Errors": r.error_count,
         }
