@@ -3,6 +3,7 @@
 </p>
 <h1 align="center">LacDictée</h1>
 <p align="center"><em>AI-powered French dictation correction for teachers</em></p>
+<!-- maintained by iulucan -->
 <p align="center">
   <a href="https://lac-dictee.streamlit.app">
     <img src="https://img.shields.io/badge/🚀_Live_Demo-lac--dictee.streamlit.app-ff4b4b?style=for-the-badge" alt="Live Demo"/>
