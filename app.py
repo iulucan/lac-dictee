@@ -15,11 +15,12 @@ from src.annotation import generate_annotated_html, generate_annotated_image, ov
 
 load_dotenv()
 
+import json
 _SAMPLES_DIR = Path(__file__).parent / "data" / "samples"
-SAMPLE_EXERCISES = [
-    {"name": "Les Champignons", "level": "A1", "exercise_key": "Les Champignons (A1)", "file": "champignons.txt"},
-    {"name": "La Renaissance",  "level": "A2", "exercise_key": "La Renaissance (A2)",  "file": "renaissance.txt"},
-]
+
+def _load_library() -> list[dict]:
+    idx = _SAMPLES_DIR / "index.json"
+    return json.loads(idx.read_text(encoding="utf-8")) if idx.exists() else []
 
 TYPE_LABELS = {
     "spelling":     ("🔴", "Spelling"),
@@ -310,22 +311,25 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    with st.expander("📖 Sample Exercises"):
-        st.caption("Pre-load a reference text to try the app quickly.")
-        for sample in SAMPLE_EXERCISES:
+    with st.expander("📖 Quick Load"):
+        st.caption("Load a built-in exercise instantly.")
+        library = _load_library()
+        for ex in library[:4]:
             if st.button(
-                f"{sample['name']} ({sample['level']})",
-                key=f"sample_{sample['file']}",
+                f"{ex['level']} · {ex['title']}",
+                key=f"sample_{ex['id']}",
                 use_container_width=True,
             ):
-                txt_path = _SAMPLES_DIR / sample["file"]
+                txt_path = _SAMPLES_DIR / ex["file"]
                 if txt_path.exists():
                     st.session_state["correct_text_area"] = txt_path.read_text(encoding="utf-8").strip()
-                    st.session_state["exercise_name"] = sample["exercise_key"]
+                    st.session_state["exercise_name"] = ex["title"]
                     st.rerun()
+        st.page_link("pages/library.py", label="Browse all exercises →", use_container_width=True)
 
     st.divider()
     st.page_link("pages/analytics.py", label="📊 Class Analytics", use_container_width=True)
+    st.page_link("pages/library.py", label="📚 Dictation Library", use_container_width=True)
 
 
 # ── Page header ────────────────────────────────────────────────────────────────
@@ -406,7 +410,7 @@ with tab_upload:
                 st.success(f"✅ {len(extracted.split())} words extracted — ready to correct")
 
 with tab_type:
-    st.caption("You can also use the Sample Exercises in the sidebar ←")
+    st.caption("Use the 📖 Quick Load in the sidebar, or browse the full 📚 Dictation Library ←")
 
 correct_text = st.text_area(
     "Reference text (what the student should have written):",

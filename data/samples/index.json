@@ -1,18 +1,11 @@
 [
-  {
-    "id": "local_001",
-    "source": "local",
-    "level": "beginner",
-    "title": "A1 — Phrases simples",
-    "word_count": 28,
-    "file": "a1-beginner.txt"
-  },
-  {
-    "id": "local_002",
-    "source": "local",
-    "level": "elementary",
-    "title": "A2 — Une journée scolaire",
-    "word_count": 48,
-    "file": "a2-elementary.txt"
-  }
+  {"id":"A1_champignons","title":"Les Champignons","level":"A1","category":"Nature","file":"A1_champignons.txt"},
+  {"id":"A1_famille","title":"La Famille","level":"A1","category":"Vie quotidienne","file":"A1_famille.txt"},
+  {"id":"A1_animaux","title":"Les Animaux","level":"A1","category":"Nature","file":"A1_animaux.txt"},
+  {"id":"A2_renaissance","title":"La Renaissance","level":"A2","category":"Histoire","file":"A2_renaissance.txt"},
+  {"id":"A2_marche","title":"Le Marché","level":"A2","category":"Vie quotidienne","file":"A2_marche.txt"},
+  {"id":"A2_saisons","title":"Les Saisons","level":"A2","category":"Nature","file":"A2_saisons.txt"},
+  {"id":"B1_cafe","title":"Le Café français","level":"B1","category":"Culture","file":"B1_cafe.txt"},
+  {"id":"B1_paris","title":"Paris et la tour Eiffel","level":"B1","category":"Culture","file":"B1_paris.txt"},
+  {"id":"B2_environnement","title":"L'environnement","level":"B2","category":"Société","file":"B2_environnement.txt"}
 ]

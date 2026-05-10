@@ -50,6 +50,7 @@ data/corrections.db
 !data/testing/**/*.jpeg
 !data/testing/**/*.png
 !data/samples/*.txt
+!data/samples/*.json
 !data/testing/results/*.pdf
 
 # Test artifacts
