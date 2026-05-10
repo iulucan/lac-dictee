@@ -5,12 +5,29 @@ Run: streamlit run app.py
 
 import streamlit as st
 from dotenv import load_dotenv
+from pathlib import Path
 import fitz  # PyMuPDF
 from src.ocr import extract_text_from_image
 from src.correction import correct_dictation, reconstruct_reference
 from src.pdf_export import generate_pdf
 from src.storage import save_correction, list_corrections
 from src.annotation import generate_annotated_html, generate_annotated_image, overlay_annotations_on_image
+
+_SAMPLES_DIR = Path(__file__).parent / "data" / "samples"
+SAMPLE_EXERCISES = [
+    {
+        "name": "Les Champignons",
+        "level": "A1",
+        "exercise_key": "Les Champignons (A1)",
+        "file": "champignons.txt",
+    },
+    {
+        "name": "La Renaissance",
+        "level": "A2",
+        "exercise_key": "La Renaissance (A2)",
+        "file": "renaissance.txt",
+    },
+]
 
 load_dotenv()
 
@@ -179,6 +196,21 @@ with st.sidebar:
             st.session_state.pop("history_id", None)
             st.session_state.pop("history_rec", None)
             st.rerun()
+
+    st.divider()
+    with st.expander("📖 Sample Exercises"):
+        st.caption("Pre-load a reference text to try the app quickly.")
+        for sample in SAMPLE_EXERCISES:
+            if st.button(
+                f"{sample['name']} ({sample['level']})",
+                key=f"sample_{sample['file']}",
+                use_container_width=True,
+            ):
+                txt_path = _SAMPLES_DIR / sample["file"]
+                if txt_path.exists():
+                    st.session_state["correct_text_area"] = txt_path.read_text(encoding="utf-8").strip()
+                    st.session_state["exercise_name"] = sample["exercise_key"]
+                    st.rerun()
 
     st.divider()
     st.page_link("pages/analytics.py", label="📊 Class Analytics", use_container_width=True)
