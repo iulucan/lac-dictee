@@ -132,6 +132,10 @@ lac-dictee/
 │   ├── pdf_export.py         # PDF report generation
 │   ├── storage.py            # SQLite persistence
 │   └── annotation.py         # Annotated image + BB overlay
+├── batch_correct.py          # Batch: correct one or more student files from the CLI
+├── batch_demo.py             # Batch: demo dataset (Champignons + Renaissance) → SQLite + PDFs
+├── batch_all.py              # Batch: process all remaining student files → PDF reports
+├── batch_tv5monde.py         # Batch: process demo dataset → analytics JSON
 ├── run_all_datasets.py       # Batch: process all datasets → PDFs + JSON summary
 ├── warmup.py                 # Pre-demo engine check
 ├── packages.txt              # System dependencies for Streamlit Cloud
